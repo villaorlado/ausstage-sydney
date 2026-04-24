@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Performance Sampling and Network Metrics Demo v4</title>
+<style>
+  :root{--bg:#f7f7f4;--panel:#fff;--ink:#171717;--muted:#666;--line:#d6d6ce;--accent:#1f6feb;--soft:#eef4ff;--warn:#fff7ed;--orange:#f59e0b;--green:#16a34a;--grey:#d7d7d0}
+  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+  header{max-width:1240px;margin:auto;padding:16px 22px 7px} h1{font-size:24px;margin:0 0 5px;letter-spacing:-.025em}.sub{max-width:960px;color:var(--muted);margin:0;font-size:14px;line-height:1.35}
+  main{max-width:1240px;margin:auto;padding:8px 22px 22px;display:grid;grid-template-columns:292px 1fr;gap:13px}.card{background:var(--panel);border:1px solid var(--line);border-radius:18px;box-shadow:0 8px 24px rgba(0,0,0,.045)}
+  .controls{padding:13px;display:flex;flex-direction:column;gap:11px}.viz{padding:11px;display:grid;grid-template-rows:auto 1fr;gap:9px;min-height:0}.topbar{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center}.tabs{display:flex;gap:7px;flex-wrap:wrap}button{border:1px solid var(--line);background:#fff;border-radius:999px;padding:8px 11px;font-size:13px;cursor:pointer}button.active{background:var(--accent);border-color:var(--accent);color:#fff}button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}button:disabled{opacity:.45;cursor:not-allowed}
+  label{font-size:12px;color:var(--muted);font-weight:750;display:block;margin-bottom:5px}.small{font-size:12px;color:var(--muted);line-height:1.35}.metric{background:var(--soft);border:1px solid #cfe1ff;border-radius:14px;padding:10px}.metric .big{font-size:30px;font-weight:850;letter-spacing:-.04em}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}.pill{border:1px solid var(--line);border-radius:13px;padding:8px;background:#fff}.pill b{display:block;font-size:17px}.legend{display:flex;gap:10px;flex-wrap:wrap;font-size:12px;color:var(--muted)}.sw{width:12px;height:12px;display:inline-block;border:1px solid #999;border-radius:50%;vertical-align:-2px;margin-right:4px}.sw.sel{background:#dbeafe;border-color:#1f6feb}.sw.hit{background:#fff7ed;border-color:#f59e0b}.sw.obs{background:#1f6feb;border-color:#1f6feb}.explain{font-size:13px;line-height:1.35;color:#333;border-top:1px solid var(--line);padding-top:10px}
+  .stage{display:grid;grid-template-columns:minmax(360px,1fr) 292px;gap:10px;min-height:0}.canvasWrap{position:relative;min-height:0}.net{width:100%;height:500px;border:1px solid var(--line);border-radius:16px;background:#fff;display:block}.side{display:grid;grid-template-rows:auto auto;gap:10px;min-height:0}.perfPanel{border:1px solid var(--line);border-radius:16px;background:#fff;padding:10px;overflow:hidden}.perfTitle{display:flex;justify-content:space-between;align-items:baseline;font-size:13px;font-weight:800;margin-bottom:8px}.perfList{display:grid;grid-template-columns:1fr;gap:5px;max-height:226px;overflow:auto;padding-right:2px}.perf{border:1px solid var(--line);border-radius:10px;padding:6px 8px;font-size:12px;display:grid;grid-template-columns:42px 1fr 32px;gap:6px;align-items:center;background:#fff}.perf .id{font-weight:800;color:#444}.perf .cast{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#555}.perf .count{text-align:center;border-radius:999px;background:#f1f1ee;font-weight:800}.perf.selected{background:#eef4ff;border-color:#bcd5ff}.perf.over{background:#fff7ed;border-color:#f7c276}.perf.real{background:#f0fdf4;border-color:#bbf7d0}
+  .chart{height:250px;border:1px solid var(--line);border-radius:16px;background:#fff;display:block;width:100%}.mini{position:absolute;left:12px;top:12px;background:rgba(255,255,255,.92);border:1px solid var(--line);border-radius:14px;padding:8px 10px;font-size:12px;color:#444;box-shadow:0 4px 16px rgba(0,0,0,.06)}
+  @media(max-width:900px){main{grid-template-columns:1fr}.stage{grid-template-columns:1fr}.net{height:420px}.perfList{max-height:220px}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Sampling performances, rebuilding co-occurrence networks</h1>
+  <p class="sub">Performers are nodes. Each performance creates a clique among its cast. The observed network is built from 20 performances; bootstrap, rarefaction, and null-model steps rebuild a new performer network and add its clustering score to the distribution.</p>
+</header>
+<main>
+  <section class="card controls">
+    <div><label>View</label><div class="tabs" id="tabs"></div></div>
+    <div id="methodControls"></div>
+    <div class="metric"><div class="small" id="scoreLabel">Average clustering coefficient</div><div class="big" id="score">—</div><div class="small" id="counts">—</div></div>
+    <div class="grid2"><div class="pill"><span class="small">Unique performances</span><b id="perfUsed">—</b></div><div class="pill"><span class="small">Performance draws</span><b id="drawsUsed">—</b></div></div>
+    <div class="legend"><span><i class="sw"></i>performer</span><span><i class="sw sel"></i>sampled performance</span><span><i class="sw hit"></i>repeated draw / heavier tie (bootstrap & rarefaction)</span><span><i class="sw obs"></i>observed value</span></div>
+    <div class="explain" id="explain"></div>
+  </section>
+  <section class="card viz">
+    <div class="topbar"><div><b id="title">—</b><div class="small" id="subtitle">—</div></div><button id="stepBtn" class="primary">Add one draw</button></div>
+    <div class="stage">
+      <div class="canvasWrap"><canvas id="net" class="net"></canvas><div class="mini" id="mini">—</div></div>
+      <div class="side">
+        <div class="perfPanel"><div class="perfTitle"><span>Performances</span><span id="sampleNote" class="small">—</span></div><div class="perfList" id="perfList"></div></div>
+        <canvas id="chart" class="chart"></canvas>
+      </div>
+    </div>
+  </section>
+</main>
+<script>
+const performers = Array.from({length:26},(_,i)=>String.fromCharCode(65+i));
+// Deliberately structured observed data: recurring ensembles + a few bridging performances.
+const performances = [
+ ['A','B','C','D','E'],['A','B','C','D'],['A','C','D','E'],['B','C','D','E'],['A','B','D','E'],
+ ['F','G','H','I','J'],['F','G','H','I'],['G','H','I','J'],['F','H','I','J'],['F','G','I','J'],
+ ['K','L','M','N','O'],['K','L','M','N'],['K','M','N','O'],['L','M','N','O'],['K','L','N','O'],
+ ['P','Q','R'],['S','T','U'],['V','W','X'],['A','F','K'],['E','J','O']
+].map((cast,i)=>({id:i+1,cast}));
+let rngSeed=7; function rnd(){rngSeed=(rngSeed*1664525+1013904223)>>>0;return rngSeed/4294967296}
+const methods={observed:{name:'Real network'},bootstrap:{name:'Bootstrap'},rare:{name:'Rarefaction'},null:{name:'Null model'}};
+let state={method:'observed',current:performances.slice(),selectedCounts:new Map(performances.map(p=>[p.id,1])),runs:{bootstrap:[],rare:[],null:[]},observedClustering:0};
+const el=id=>document.getElementById(id), net=el('net'), nctx=net.getContext('2d'), chart=el('chart'), cctx=chart.getContext('2d');
+function observedCounts(){return new Map(performances.map(p=>[p.id,1]))}
+function sampleWithReplacement(n,k){const counts=new Map(); for(let i=0;i<k;i++){const idx=Math.floor(rnd()*n)+1; counts.set(idx,(counts.get(idx)||0)+1)} return counts}
+function sampleWithoutReplacement(n,k){let arr=Array.from({length:n},(_,i)=>i+1); for(let i=arr.length-1;i>0;i--){const j=Math.floor(rnd()*(i+1));[arr[i],arr[j]]=[arr[j],arr[i]]} return new Map(arr.slice(0,k).map(x=>[x,1]))}
+function setCurrentFromCounts(counts){state.selectedCounts=counts; let rows=[]; counts.forEach((c,id)=>{for(let i=0;i<c;i++)rows.push(performances[id-1])}); state.current=rows}
+function buildGraph(perfs){const nodes=new Map(), edges=new Map(); perfs.forEach(p=>{p.cast.forEach(a=>{if(!nodes.has(a))nodes.set(a,{id:a,weight:0}); nodes.get(a).weight++}); for(let i=0;i<p.cast.length;i++)for(let j=i+1;j<p.cast.length;j++){let a=p.cast[i],b=p.cast[j]; if(a>b)[a,b]=[b,a]; const key=a+'-'+b; edges.set(key,(edges.get(key)||0)+1)}}); return {nodes:[...nodes.values()],edges:[...edges.entries()].map(([k,w])=>{let [a,b]=k.split('-');return {a,b,w}})} }
+function adjacency(g){const adj=new Map(g.nodes.map(n=>[n.id,new Set()])); g.edges.forEach(e=>{adj.get(e.a)?.add(e.b);adj.get(e.b)?.add(e.a)}); return adj}
+function avgClustering(g){if(!g.nodes.length)return 0; const adj=adjacency(g); let total=0; g.nodes.forEach(n=>{const nb=[...adj.get(n.id)], k=nb.length, poss=k*(k-1)/2; if(!poss)return; let links=0; for(let i=0;i<k;i++)for(let j=i+1;j<k;j++) if(adj.get(nb[i])?.has(nb[j]))links++; total+=links/poss}); return total/g.nodes.length}
+function layout(g){const clusters=[['A','B','C','D','E'],['F','G','H','I','J'],['K','L','M','N','O'],['P','Q','R','S','T','U','V','W','X','Y','Z']]; const pos=new Map(); clusters.forEach((cl,ci)=>{const cx=[.28,.72,.5,.5][ci], cy=[.28,.28,.68,.48][ci], r=ci===3?.28:.12; cl.forEach((id,i)=>{const a=2*Math.PI*i/cl.length-Math.PI/2;pos.set(id,{x:cx+r*Math.cos(a),y:cy+r*Math.sin(a)})})}); g.nodes.forEach((n,i)=>{if(!pos.has(n.id)){const a=2*Math.PI*i/g.nodes.length;pos.set(n.id,{x:.5+.35*Math.cos(a),y:.5+.35*Math.sin(a)})}});return pos}
+function drawNetwork(){const rect=net.getBoundingClientRect(), dpr=window.devicePixelRatio||1; net.width=rect.width*dpr; net.height=rect.height*dpr; nctx.setTransform(dpr,0,0,dpr,0,0); nctx.clearRect(0,0,rect.width,rect.height); const g=buildGraph(state.current), pos=layout(g); const pad=46, s=Math.min(rect.width,rect.height)-pad*2; const xy=p=>({x:rect.width/2+(p.x-.5)*s,y:rect.height/2+(p.y-.5)*s});
+ nctx.lineCap='round'; const showRepeated = state.method==='bootstrap' || state.method==='rare'; g.edges.forEach(e=>{const A=xy(pos.get(e.a)),B=xy(pos.get(e.b)); const repeated = showRepeated && e.w>1; nctx.strokeStyle=repeated?'#f59e0b':'#b9b9b1'; nctx.lineWidth=repeated?Math.min(7,1+e.w*1.1):1.35; nctx.globalAlpha=repeated?.76:.58; nctx.beginPath();nctx.moveTo(A.x,A.y);nctx.lineTo(B.x,B.y);nctx.stroke()}); nctx.globalAlpha=1;
+ g.nodes.forEach(n=>{const P=xy(pos.get(n.id)); const repeatedNode = showRepeated && n.weight>5; const r=7+Math.min(8,n.weight*.75); nctx.beginPath(); nctx.fillStyle=repeatedNode?'#fff7ed':'#fff'; nctx.strokeStyle=repeatedNode?'#f59e0b':'#111'; nctx.lineWidth=repeatedNode?2.4:1.35; nctx.arc(P.x,P.y,r,0,Math.PI*2);nctx.fill();nctx.stroke(); nctx.fillStyle='#111'; nctx.font='12px system-ui'; nctx.textAlign='center'; nctx.textBaseline='middle'; nctx.fillText(n.id,P.x,P.y)});
+ const c=avgClustering(g); el('score').textContent=c.toFixed(3); el('counts').textContent=`${g.nodes.length} performers · ${g.edges.length} co-occurrence ties`; el('perfUsed').textContent=new Set(state.current.map(p=>p.id)).size; el('drawsUsed').textContent=state.current.length; el('mini').textContent=`Network rebuilt from ${state.current.length} performance draw${state.current.length===1?'':'s'}`; return {g,c};}
+function drawPerformanceList(){const list=el('perfList'); list.innerHTML=''; performances.forEach(p=>{const count=state.selectedCounts.get(p.id)||0; const div=document.createElement('div'); const canRepeat = state.method==='bootstrap' || state.method==='rare'; div.className='perf '+(state.method==='observed'?'real':canRepeat&&count>1?'over':count?'selected':''); div.innerHTML=`<span class="id">P${p.id}</span><span class="cast">${p.cast.join(' · ')}</span><span class="count">${count||''}</span>`; list.appendChild(div)})}
+function drawChart(currentC){const rect=chart.getBoundingClientRect(), dpr=window.devicePixelRatio||1; chart.width=rect.width*dpr; chart.height=rect.height*dpr; cctx.setTransform(dpr,0,0,dpr,0,0); cctx.clearRect(0,0,rect.width,rect.height); const W=rect.width,H=rect.height,pad=30; const obs=state.observedClustering; cctx.strokeStyle='#d6d6ce';cctx.lineWidth=1; cctx.beginPath();cctx.moveTo(pad,H-pad);cctx.lineTo(W-pad,H-pad);cctx.stroke(); cctx.fillStyle='#666'; cctx.font='11px system-ui'; cctx.fillText('clustering',pad,H-8); const x=v=>pad+(W-2*pad)*Math.max(0,Math.min(1,v));
+ const runs=state.runs[state.method]||[]; if(state.method==='observed'){cctx.fillStyle='#666'; cctx.font='12px system-ui'; cctx.fillText('Observed value only — no sampling distribution here',pad,pad+4); cctx.strokeStyle='#1f6feb';cctx.lineWidth=3;cctx.beginPath();cctx.moveTo(x(obs),pad+20);cctx.lineTo(x(obs),H-pad);cctx.stroke(); cctx.fillStyle='#1f6feb';cctx.fillText('observed full network',Math.min(W-140,x(obs)+5),pad+34); return;}
+ const bins=24, counts=Array(bins).fill(0); runs.forEach(v=>counts[Math.min(bins-1,Math.floor(v*bins))]++); const max=Math.max(1,...counts); counts.forEach((n,i)=>{const bw=(W-2*pad)/bins, h=(H-2*pad)*n/max; cctx.fillStyle='#d7d7d0'; cctx.fillRect(pad+i*bw,H-pad-h,bw-2,h)});
+ // newest draw as a dot
+ if(runs.length){const v=runs[runs.length-1], y=H-pad-(H-2*pad)*(counts[Math.min(bins-1,Math.floor(v*bins))]/max); cctx.fillStyle='#f59e0b'; cctx.beginPath(); cctx.arc(x(v),Math.max(pad+6,y-7),5,0,Math.PI*2); cctx.fill();}
+ cctx.strokeStyle='#1f6feb';cctx.lineWidth=3;cctx.beginPath();cctx.moveTo(x(obs),pad);cctx.lineTo(x(obs),H-pad);cctx.stroke(); cctx.fillStyle='#1f6feb'; cctx.fillText('real',Math.min(W-45,x(obs)+5),pad+13);
+ cctx.fillStyle='#444'; cctx.fillText(`${runs.length} draw${runs.length===1?'':'s'}`,pad+4,pad+13);
+}
+function randomPerformance(id){const size=3+Math.floor(rnd()*3); let pool=[...performers], cast=[]; for(let i=0;i<size;i++){const j=Math.floor(rnd()*pool.length); cast.push(pool.splice(j,1)[0])} return {id,cast}}
+function addRun(batch=1){for(let b=0;b<batch;b++){
+ if(state.method==='bootstrap'){const counts=sampleWithReplacement(20,20); setCurrentFromCounts(counts); state.runs.bootstrap.push(avgClustering(buildGraph(state.current)));}
+ if(state.method==='rare'){const counts=sampleWithoutReplacement(20,5); setCurrentFromCounts(counts); state.runs.rare.push(avgClustering(buildGraph(state.current)));}
+ if(state.method==='null'){const fake=Array.from({length:20},(_,i)=>randomPerformance(i+1)); state.current=fake; state.selectedCounts=new Map(fake.map(p=>[p.id,1])); state.runs.null.push(avgClustering(buildGraph(fake)));}
+ }}
+function resetMethod(clear=false){if(state.method==='observed'){state.current=performances.slice(); state.selectedCounts=observedCounts();}
+ if(state.method==='bootstrap'){if(clear)state.runs.bootstrap=[]; if(!state.runs.bootstrap.length)addRun(1);}
+ if(state.method==='rare'){if(clear)state.runs.rare=[]; if(!state.runs.rare.length)addRun(1);}
+ if(state.method==='null'){if(clear)state.runs.null=[]; if(!state.runs.null.length)addRun(1);}}
+function setupTabs(){const tabs=el('tabs'); Object.entries(methods).forEach(([k,v])=>{const b=document.createElement('button');b.textContent=v.name;b.onclick=()=>{state.method=k;resetMethod(false);render()};b.id='tab_'+k;tabs.appendChild(b)})}
+function controls(){let html=''; if(state.method==='observed') html=`<div class="small">This is the reference network built from all 20 observed performances. The blue line in every distribution marks this value.</div>`;
+ if(state.method==='bootstrap') html=`<button class="primary" id="add10">Add 10 bootstrap networks</button> <button id="resetRuns">Reset</button><div class="small">Each draw samples 20 performances with replacement. Some performances repeat, strengthening their co-occurrence ties.</div>`;
+ if(state.method==='rare') html=`<button class="primary" id="add10">Add 10 rarefied networks</button> <button id="resetRuns">Reset</button><div class="small">Each draw samples 5 performances without replacement, representing the smallest two-year window.</div>`;
+ if(state.method==='null') html=`<button class="primary" id="add10">Add 10 null networks</button> <button id="resetRuns">Reset</button><div class="small">Each null network has 20 random performances using the same performer pool and similar cast sizes.</div>`;
+ el('methodControls').innerHTML=html; if(el('add10'))el('add10').onclick=()=>{addRun(10);render()}; if(el('resetRuns'))el('resetRuns').onclick=()=>{resetMethod(true);render()};}
+function render(){Object.keys(methods).forEach(k=>el('tab_'+k).classList.toggle('active',state.method===k)); controls(); const copy={observed:['Observed co-occurrence network','20 real performances','Start with the real sampling frame: a list of performances, each contributing all pairwise co-occurrences among its performers.'],bootstrap:['Bootstrap distribution','20 draws from 20 observed performances, with replacement','The distribution asks: if this observed set were resampled many times, how much would the clustering coefficient vary?'],rare:['Rarefaction distribution','5 draws from 20 observed performances, without replacement','The distribution asks: what clustering values would we get if every time window were reduced to the smallest observed number of performances?'],null:['Null-model distribution','20 random performances per network','The distribution asks: is the real network more clustered than networks with the same broad size constraints but random performer assignment?']}[state.method]; el('title').textContent=copy[0]; el('subtitle').textContent=copy[1]; el('explain').textContent=copy[2]; el('sampleNote').textContent=state.method==='bootstrap'?'counts show repeated draws':state.method==='observed'?'observed data':'selected rows'; el('stepBtn').style.display=state.method==='observed'?'none':'inline-block'; el('stepBtn').textContent=state.method==='null'?'Add one null network':'Add one draw'; const {c}=drawNetwork(); drawPerformanceList(); drawChart(c);
+ if(state.method!=='observed'){const runs=state.runs[state.method]; const mean=runs.reduce((a,b)=>a+b,0)/runs.length; const p = state.method==='null' ? runs.filter(v=>v>=state.observedClustering).length/runs.length : null; el('scoreLabel').textContent='Current sampled network'; el('counts').textContent += ` · distribution mean ${mean.toFixed(3)}` + (p==null?'':` · p≈${p.toFixed(3)}`);
+ } else {el('scoreLabel').textContent='Observed full network';}}
+window.addEventListener('resize',render); el('stepBtn').onclick=()=>{addRun(1);render()}; setupTabs(); state.observedClustering=avgClustering(buildGraph(performances)); resetMethod(); render();
+</script>
+</body>
+</html>
