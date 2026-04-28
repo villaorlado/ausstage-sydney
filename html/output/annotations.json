@@ -1,7 +1,6 @@
 {
   "watersheds": [
-    { "year": 1950, "label": "television" },
-    { "year": 1976, "label": "opera house" }
+    { "year": 1975, "label": "Australia Council" },
   ],
   "high_confidence": [
     { "start": 1940, "end": 1976 }

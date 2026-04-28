@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ABM Network Shock Visualization</title>
+<style>
+  :root{
+    --bg:#f8fafc;
+    --card:#ffffff;
+    --border:#e2e8f0;
+    --text:#0f172a;
+    --muted:#64748b;
+    --blue:#2563eb;
+    --orange:#f97316;
+    --green:#16a34a;
+    --red:#dc2626;
+    --slate:#94a3b8;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;}
+  .wrap{max-width:1360px;margin:0 auto;padding:24px;}
+  header{margin-bottom:18px;}
+  .eyebrow{text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:700;font-size:12px;margin-bottom:6px;}
+  h1{font-size:31px;line-height:1.15;margin:0 0 8px;font-weight:800;}
+  p{margin:0;color:var(--muted);line-height:1.5;}
+  .layout{display:grid;grid-template-columns:330px 1fr;gap:18px;align-items:start;}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:18px;box-shadow:0 1px 2px rgba(15,23,42,.04);}
+  .pad{padding:18px;}
+  .side{display:flex;flex-direction:column;gap:14px;}
+  .controls h2,.main h2{font-size:16px;margin:0 0 4px;font-weight:800;}
+  .control{padding:13px 0;border-top:1px solid var(--border);}
+  .control:first-of-type{border-top:none;padding-top:4px;}
+  .row{display:flex;justify-content:space-between;gap:12px;align-items:baseline;font-size:14px;margin-bottom:8px;}
+  .value{font-weight:800;color:var(--text);}
+  input[type="range"]{width:100%;accent-color:var(--blue);}
+  .hint{font-size:12px;color:var(--muted);line-height:1.35;margin-top:5px;}
+  .buttons{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:10px;}
+  button{border:1px solid var(--border);background:#fff;border-radius:12px;padding:10px 11px;font-weight:700;color:var(--text);cursor:pointer;}
+  button.primary{background:var(--text);color:white;border-color:var(--text);}
+  button:hover{filter:brightness(.98)}
+  .metric-grid{display:grid;grid-template-columns:1fr;gap:10px;}
+  .metric{padding:14px;}
+  .metric-label{text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-size:11px;font-weight:800;}
+  .metric-value{font-size:31px;font-weight:850;margin-top:2px;}
+  .metric-note{font-size:12px;color:var(--muted);line-height:1.35;}
+  .blue{color:var(--blue)} .orange{color:var(--orange)} .green{color:var(--green)} .red{color:var(--red)}
+  .main{display:flex;flex-direction:column;gap:18px;}
+  .topbar{display:flex;justify-content:space-between;gap:14px;align-items:flex-start;margin-bottom:12px;}
+  .badge{font-size:13px;font-weight:800;border-radius:999px;padding:7px 10px;white-space:nowrap;}
+  .badge.base{background:#dbeafe;color:#1d4ed8}.badge.shock{background:#ffedd5;color:#c2410c}.badge.post{background:#fee2e2;color:#b91c1c}
+  svg{display:block;width:100%;height:auto;}
+  .network-frame{border:1px solid var(--border);border-radius:18px;background:white;overflow:hidden;}
+  .charts{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;}
+  .chart-card{padding:16px;}
+  .chart-title{font-size:15px;font-weight:800;margin-bottom:2px;}
+  .chart-sub{font-size:12px;color:var(--muted);margin-bottom:8px;}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);align-items:center;margin-top:10px;}
+  .dot{width:10px;height:10px;border-radius:999px;display:inline-block;margin-right:5px;vertical-align:-1px;}
+  .explain{font-size:14px;line-height:1.55;color:var(--muted);}
+  .callout{border-left:4px solid var(--green);padding-left:12px;}
+  .prod-list{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px;}
+  .prod{border:1px solid var(--border);border-radius:12px;padding:8px;background:#f8fafc;font-size:12px;color:var(--muted);}
+  .prod b{color:var(--text)}
+  @media(max-width:1050px){.layout{grid-template-columns:1fr}.charts{grid-template-columns:1fr}.prod-list{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Agent-based intuition builder</div>
+    <h1>How can growth after a funding shock lower network clustering?</h1>
+    <p>A standalone interactive toy model. Before the shock, the field is deliberately stable. After the shock, you can vary the influx of performers, the number of new productions, and the mixer rate.</p>
+  </header>
+
+  <div class="layout">
+    <aside class="side">
+      <section class="card pad controls">
+        <h2>Simulation controls</h2>
+        <p style="font-size:13px">All baseline years use the same number of performers, performances, and cast size. Only post-shock years change.</p>
+
+        <div class="control">
+          <div class="row"><span>Year</span><span class="value" id="yearValue">1970</span></div>
+          <input id="year" type="range" min="0" max="11" value="0" step="1" />
+          <div class="hint">Move through yearly co-occurrence networks.</div>
+        </div>
+
+        <div class="control">
+          <div class="row"><span>Shock year</span><span class="value" id="shockYearValue">1975</span></div>
+          <input id="shockYear" type="range" min="1972" max="1978" value="1975" step="1" />
+          <div class="hint">Before this year, the simulation is stable by design.</div>
+        </div>
+
+        <div class="control">
+          <div class="row"><span>Baseline performers</span><span class="value" id="basePerformersValue">44</span></div>
+          <input id="basePerformers" type="range" min="24" max="80" value="44" step="4" />
+          <div class="hint">Constant before the shock.</div>
+        </div>
+
+        <div class="control">
+          <div class="row"><span>Baseline performances</span><span class="value" id="basePerformancesValue">24</span></div>
+          <input id="basePerformances" type="range" min="12" max="50" value="24" step="2" />
+          <div class="hint">Constant before the shock.</div>
+        </div>
+
+        <div class="control">
+          <div class="row"><span>Cast size</span><span class="value" id="castSizeValue">5</span></div>
+          <input id="castSize" type="range" min="3" max="8" value="5" step="1" />
+          <div class="hint">Stable before and after the shock.</div>
+        </div>
+
+        <div class="control">
+          <div class="row"><span>Annual performer influx</span><span class="value" id="influxValue">8</span></div>
+          <input id="influx" type="range" min="0" max="24" value="8" step="1" />
+          <div class="hint">New performers added each post-shock year.</div>
+        </div>
+
+        <div class="control">
+          <div class="row"><span>Annual production growth</span><span class="value" id="prodGrowthValue">6</span></div>
+          <input id="prodGrowth" type="range" min="0" max="24" value="6" step="1" />
+          <div class="hint">New performances added each post-shock year.</div>
+        </div>
+
+        <div class="control">
+          <div class="row"><span>Mixer parameter</span><span class="value" id="mixerValue">0.45</span></div>
+          <input id="mixer" type="range" min="0" max="100" value="45" step="5" />
+          <div class="hint">Probability that a post-shock production samples across circles rather than from one familiar neighbourhood.</div>
+        </div>
+
+        <div class="buttons">
+          <button class="primary" id="play">Play</button>
+          <button id="step">Step</button>
+          <button id="reset">Reset</button>
+        </div>
+      </section>
+
+      <section class="metric-grid">
+        <div class="card metric"><div class="metric-label">Average clustering</div><div class="metric-value red" id="mClust">0.90</div><div class="metric-note">Mean local triangle closure in the yearly co-occurrence network.</div></div>
+        <div class="card metric"><div class="metric-label">Performers</div><div class="metric-value blue" id="mPerf">44</div><div class="metric-note">Active nodes in the current year.</div></div>
+        <div class="card metric"><div class="metric-label">Performances</div><div class="metric-value orange" id="mProds">24</div><div class="metric-note">Productions sampled in the current year.</div></div>
+        <div class="card metric"><div class="metric-label">Mixer productions</div><div class="metric-value green" id="mMix">0%</div><div class="metric-note">Post-shock productions casting across neighbourhoods.</div></div>
+      </section>
+    </aside>
+
+    <main class="main">
+      <section class="card pad">
+        <div class="topbar">
+          <div>
+            <h2>Yearly co-occurrence network</h2>
+            <p style="font-size:13px">Nodes are performers. Edges mean two performers appeared in the same production that year. Blue edges close familiar local triangles; green edges are mixer ties.</p>
+          </div>
+          <div class="badge base" id="phaseBadge">Stable baseline</div>
+        </div>
+        <div class="network-frame">
+          <svg id="network" viewBox="0 0 820 470" aria-label="network visualization"></svg>
+        </div>
+        <div class="legend">
+          <span><span class="dot" style="background:var(--blue)"></span>established performer</span>
+          <span><span class="dot" style="background:var(--orange)"></span>new post-shock performer</span>
+          <span><span class="dot" style="background:#cbd5e1"></span>local co-occurrence tie</span>
+          <span><span class="dot" style="background:var(--green)"></span>mixer tie</span>
+        </div>
+      </section>
+
+      <section class="charts">
+        <div class="card chart-card">
+          <div class="chart-title">Average clustering</div>
+          <div class="chart-sub">Expected to fall when mixer ties rise.</div>
+          <svg id="chartClust" viewBox="0 0 360 230"></svg>
+        </div>
+        <div class="card chart-card">
+          <div class="chart-title">Number of performers</div>
+          <div class="chart-sub">Stable before shock; grows after.</div>
+          <svg id="chartPerf" viewBox="0 0 360 230"></svg>
+        </div>
+        <div class="card chart-card">
+          <div class="chart-title">Number of performances</div>
+          <div class="chart-sub">Stable before shock; grows after.</div>
+          <svg id="chartProd" viewBox="0 0 360 230"></svg>
+        </div>
+      </section>
+
+      <section class="card pad">
+        <h2>Mechanism being tested</h2>
+        <p class="explain callout">
+          The pre-shock field is intentionally held constant. After the funding shock, more performers and productions enter. If these new productions mostly draw from familiar neighbourhoods, clustering can remain high. If the mixer parameter is high, new productions create bridges across previously separate neighbourhoods. Those bridges increase connectivity but do not immediately create closed triangles, so average clustering falls.
+        </p>
+        <div class="prod-list" id="prodList"></div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<script>
+const YEARS = Array.from({length:12},(_,i)=>1970+i);
+let playing = false;
+let timer = null;
+
+const els = Object.fromEntries([
+  'year','shockYear','basePerformers','basePerformances','castSize','influx','prodGrowth','mixer','play','step','reset',
+  'yearValue','shockYearValue','basePerformersValue','basePerformancesValue','castSizeValue','influxValue','prodGrowthValue','mixerValue',
+  'mClust','mPerf','mProds','mMix','phaseBadge','network','chartClust','chartPerf','chartProd','prodList'
+].map(id=>[id,document.getElementById(id)]));
+
+function rand(seed){ const x = Math.sin(seed * 999.131) * 10000; return x - Math.floor(x); }
+function clamp(v,min,max){return Math.max(min,Math.min(max,v));}
+function pairKey(a,b){return a<b ? `${a}--${b}` : `${b}--${a}`;}
+function pairs(arr){const out=[]; for(let i=0;i<arr.length;i++) for(let j=i+1;j<arr.length;j++) out.push([arr[i],arr[j]]); return out;}
+function choice(items, seed){ return items[Math.floor(rand(seed)*items.length) % items.length]; }
+function sample(items, n, seedBase){
+  const pool = items.slice(); const out=[];
+  for(let i=0;i<n && pool.length;i++){
+    const idx = Math.floor(rand(seedBase+i*17)*pool.length);
+    out.push(pool.splice(idx,1)[0]);
+  }
+  return out;
+}
+
+function params(){
+  return {
+    yearIndex:+els.year.value,
+    shockYear:+els.shockYear.value,
+    basePerformers:+els.basePerformers.value,
+    basePerformances:+els.basePerformances.value,
+    castSize:+els.castSize.value,
+    influx:+els.influx.value,
+    prodGrowth:+els.prodGrowth.value,
+    mixer:+els.mixer.value/100
+  };
+}
+
+function makeNodes(count, baseCount){
+  // Stable neighbourhoods; not companies, just dense local casting pools.
+  const circles = Math.max(4, Math.round(Math.sqrt(baseCount)/1.6));
+  const centers = Array.from({length:circles},(_,i)=>{
+    const a = (Math.PI*2*i)/circles - Math.PI/2;
+    return {x:410+Math.cos(a)*245, y:235+Math.sin(a)*145};
+  });
+  const nodes=[];
+  for(let i=0;i<count;i++){
+    const circle = i % circles;
+    const localIndex = Math.floor(i/circles);
+    const perCircle = Math.ceil(count/circles);
+    const a = (Math.PI*2*localIndex)/perCircle + rand(41+i)*0.3;
+    const r = 18 + rand(91+i)*34;
+    nodes.push({
+      id:`p${i}`,
+      circle,
+      newcomer:i>=baseCount,
+      x: centers[circle].x + Math.cos(a)*r,
+      y: centers[circle].y + Math.sin(a)*r
+    });
+  }
+  return nodes;
+}
+
+function localProduction(nodes, castSize, seed){
+  const circles = [...new Set(nodes.map(n=>n.circle))];
+  const c = choice(circles, seed);
+  let pool = nodes.filter(n=>n.circle===c);
+  if(pool.length < castSize) pool = nodes;
+  return sample(pool, castSize, seed+100);
+}
+
+function mixerProduction(nodes, castSize, seed){
+  // Force cross-neighbourhood sampling but keep cast size stable.
+  const circles = [...new Set(nodes.map(n=>n.circle))];
+  const chosen=[];
+  for(let i=0;i<castSize;i++){
+    const c = circles[(Math.floor(rand(seed+i*3)*circles.length)+i) % circles.length];
+    const pool = nodes.filter(n=>n.circle===c && !chosen.some(x=>x.id===n.id));
+    if(pool.length) chosen.push(choice(pool, seed+300+i*19));
+  }
+  while(chosen.length < castSize){
+    const candidate = choice(nodes, seed+900+chosen.length*11);
+    if(!chosen.some(x=>x.id===candidate.id)) chosen.push(candidate);
+  }
+  return chosen;
+}
+
+function buildYear(yearIndex, p){
+  const year = YEARS[yearIndex];
+  const post = year >= p.shockYear;
+  const t = post ? year - p.shockYear + 1 : 0;
+  const performerCount = p.basePerformers + t * p.influx;
+  const productionCount = p.basePerformances + t * p.prodGrowth;
+  const nodes = makeNodes(performerCount, p.basePerformers);
+  const nodeMap = Object.fromEntries(nodes.map(n=>[n.id,n]));
+  const edgeMap = new Map();
+  const productions=[];
+
+  for(let k=0;k<productionCount;k++){
+    const isMixer = post && rand(year*100 + k*13) < p.mixer;
+    const cast = isMixer ? mixerProduction(nodes, p.castSize, year*1000+k*31) : localProduction(nodes, p.castSize, year*1000+k*31);
+    productions.push({cast:cast.map(n=>n.id), isMixer});
+    pairs(cast.map(n=>n.id)).forEach(([a,b])=>{
+      const key = pairKey(a,b);
+      const existing = edgeMap.get(key);
+      edgeMap.set(key, {a,b,mixer: isMixer || (existing && existing.mixer)});
+    });
+  }
+
+  const edges = [...edgeMap.values()].map(e=>({...e, source:nodeMap[e.a], target:nodeMap[e.b]}));
+  return {year, post, nodes, edges, productions, performers:performerCount, performances:productionCount, clustering:clustering(nodes, edgeMap), mixerShare: post ? productions.filter(d=>d.isMixer).length/productions.length : 0};
+}
+
+function clustering(nodes, edgeMap){
+  const neigh = new Map(nodes.map(n=>[n.id,new Set()]));
+  edgeMap.forEach((_,key)=>{
+    const [a,b]=key.split('--');
+    neigh.get(a).add(b); neigh.get(b).add(a);
+  });
+  let sum=0, count=0;
+  nodes.forEach(n=>{
+    const ns=[...neigh.get(n.id)];
+    if(ns.length<2) return;
+    let closed=0;
+    pairs(ns).forEach(([a,b])=>{ if(edgeMap.has(pairKey(a,b))) closed++; });
+    sum += closed / (ns.length*(ns.length-1)/2);
+    count++;
+  });
+  return count ? sum/count : 0;
+}
+
+function series(p){ return YEARS.map((_,i)=>buildYear(i,p)); }
+
+function svgEl(name, attrs={}){
+  const el=document.createElementNS('http://www.w3.org/2000/svg',name);
+  Object.entries(attrs).forEach(([k,v])=>el.setAttribute(k,v));
+  return el;
+}
+function clear(el){ while(el.firstChild) el.removeChild(el.firstChild); }
+
+function drawNetwork(data, p){
+  clear(els.network);
+  els.network.appendChild(svgEl('rect',{x:0,y:0,width:820,height:470,fill:'white'}));
+  if(data.year === p.shockYear){
+    const t=svgEl('text',{x:28,y:40,fill:'#c2410c','font-size':18,'font-weight':800}); t.textContent='Funding shock begins'; els.network.appendChild(t);
+  }
+  if(!data.post){
+    const t=svgEl('text',{x:28,y:40,fill:'#2563eb','font-size':15,'font-weight':800}); t.textContent='Stable baseline: same scale, same rules'; els.network.appendChild(t);
+  }
+  data.edges.forEach(e=>{
+    const line=svgEl('line',{x1:e.source.x,y1:e.source.y,x2:e.target.x,y2:e.target.y,stroke:e.mixer?'#16a34a':'#cbd5e1','stroke-width':e.mixer?1.8:1.1,opacity:e.mixer?0.72:0.42});
+    els.network.appendChild(line);
+  });
+  data.nodes.forEach(n=>{
+    const c=svgEl('circle',{cx:n.x,cy:n.y,r:n.newcomer?5.6:4.5,fill:n.newcomer?'#f97316':'#2563eb',stroke:'white','stroke-width':1.5,opacity:.96});
+    els.network.appendChild(c);
+  });
+}
+
+function drawChart(svg, data, key, color, yDomain, format){
+  clear(svg);
+  const W=360,H=230, l=42,r=14,t=18,b=36;
+  const xs=data.map(d=>d.year);
+  const minX=Math.min(...xs), maxX=Math.max(...xs);
+  let minY,maxY;
+  if(yDomain){ [minY,maxY]=yDomain; } else { minY=0; maxY=Math.max(...data.map(d=>d[key]))*1.1 || 1; }
+  const x=v=>l+(v-minX)/(maxX-minX)*(W-l-r);
+  const y=v=>H-b-(v-minY)/(maxY-minY)*(H-t-b);
+  [0,.25,.5,.75,1].forEach(fr=>{
+    const yy=t+fr*(H-t-b);
+    svg.appendChild(svgEl('line',{x1:l,y1:yy,x2:W-r,y2:yy,stroke:'#e2e8f0','stroke-dasharray':'3 3'}));
+  });
+  svg.appendChild(svgEl('line',{x1:l,y1:H-b,x2:W-r,y2:H-b,stroke:'#cbd5e1'}));
+  svg.appendChild(svgEl('line',{x1:l,y1:t,x2:l,y2:H-b,stroke:'#cbd5e1'}));
+  const path=data.map((d,i)=>`${i?'L':'M'} ${x(d.year)} ${y(d[key])}`).join(' ');
+  svg.appendChild(svgEl('path',{d:path,fill:'none',stroke:color,'stroke-width':3,'stroke-linecap':'round','stroke-linejoin':'round'}));
+  data.forEach(d=>{
+    svg.appendChild(svgEl('circle',{cx:x(d.year),cy:y(d[key]),r:3.2,fill:color,stroke:'white','stroke-width':1}));
+  });
+  const yTicks=[minY,(minY+maxY)/2,maxY];
+  yTicks.forEach(v=>{ const txt=svgEl('text',{x:l-8,y:y(v)+4,'text-anchor':'end',fill:'#64748b','font-size':11}); txt.textContent=format?format(v):Math.round(v); svg.appendChild(txt); });
+  [minX, Math.round((minX+maxX)/2), maxX].forEach(v=>{ const txt=svgEl('text',{x:x(v),y:H-12,'text-anchor':'middle',fill:'#64748b','font-size':11}); txt.textContent=v; svg.appendChild(txt); });
+}
+
+function drawProdList(data){
+  els.prodList.innerHTML='';
+  data.productions.slice(0,8).forEach((p,i)=>{
+    const div=document.createElement('div'); div.className='prod';
+    div.innerHTML=`<b>Production ${i+1}</b><br>${p.cast.length} performers · ${p.isMixer ? '<span style="color:#16a34a;font-weight:700">mixer</span>' : 'local'}`;
+    els.prodList.appendChild(div);
+  });
+}
+
+function updateLabels(p){
+  els.yearValue.textContent=YEARS[p.yearIndex];
+  els.shockYearValue.textContent=p.shockYear;
+  els.basePerformersValue.textContent=p.basePerformers;
+  els.basePerformancesValue.textContent=p.basePerformances;
+  els.castSizeValue.textContent=p.castSize;
+  els.influxValue.textContent=p.influx;
+  els.prodGrowthValue.textContent=p.prodGrowth;
+  els.mixerValue.textContent=p.mixer.toFixed(2);
+}
+
+function render(){
+  const p=params(); updateLabels(p);
+  const all=series(p); const current=all[p.yearIndex];
+  els.mClust.textContent=current.clustering.toFixed(2);
+  els.mPerf.textContent=current.performers;
+  els.mProds.textContent=current.performances;
+  els.mMix.textContent=Math.round(current.mixerShare*100)+'%';
+  els.phaseBadge.textContent = current.year < p.shockYear ? 'Stable baseline' : current.year === p.shockYear ? 'Shock year' : 'Post-shock growth';
+  els.phaseBadge.className = 'badge ' + (current.year < p.shockYear ? 'base' : current.year === p.shockYear ? 'shock' : 'post');
+  drawNetwork(current,p);
+  drawChart(els.chartClust, all, 'clustering', '#dc2626', [0,1], v=>v.toFixed(1));
+  drawChart(els.chartPerf, all, 'performers', '#2563eb');
+  drawChart(els.chartProd, all, 'performances', '#f97316');
+  drawProdList(current);
+}
+
+['year','shockYear','basePerformers','basePerformances','castSize','influx','prodGrowth','mixer'].forEach(id=>els[id].addEventListener('input',render));
+els.step.addEventListener('click',()=>{ els.year.value = Math.min(11, +els.year.value + 1); render(); });
+els.reset.addEventListener('click',()=>{ playing=false; clearInterval(timer); els.play.textContent='Play'; els.year.value=0; render(); });
+els.play.addEventListener('click',()=>{
+  playing=!playing; els.play.textContent=playing?'Pause':'Play';
+  if(playing){ timer=setInterval(()=>{ let v=+els.year.value; if(v>=11){ playing=false; els.play.textContent='Play'; clearInterval(timer); return; } els.year.value=v+1; render(); },850); }
+  else clearInterval(timer);
+});
+
+render();
+</script>
+</body>
+</html>
