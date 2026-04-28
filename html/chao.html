@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Chao1 intuition for missing nodes in a sampled network</title>
+<style>
+  :root{
+    --bg:#fbfbf8; --ink:#1f2933; --muted:#667085; --line:#d0d5dd;
+    --card:#ffffff; --accent:#2f5f8f; --warn:#b45309; --green:#267a3e;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);color:var(--ink)}
+  header{padding:22px 26px 14px;border-bottom:1px solid var(--line);background:#fff}
+  h1{font-size:22px;margin:0 0 8px}
+  .subtitle{color:var(--muted);font-size:14px;max-width:1050px;line-height:1.45}
+  main{display:grid;grid-template-columns:320px 1fr;gap:18px;padding:18px;max-width:1500px;margin:0 auto}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:0 2px 8px rgba(16,24,40,.04)}
+  .controls{padding:16px;display:flex;flex-direction:column;gap:16px}
+  label{font-size:13px;font-weight:700;display:block;margin-bottom:6px}
+  input[type=range]{width:100%}
+  select,button{font:inherit;border:1px solid var(--line);border-radius:10px;padding:9px 10px;background:white;color:var(--ink)}
+  button{cursor:pointer}
+  button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .row{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center}
+  .small{font-size:12px;color:var(--muted);line-height:1.4}
+  .statgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .stat{border:1px solid var(--line);border-radius:12px;padding:10px;background:#fcfcfd}
+  .stat .k{font-size:12px;color:var(--muted)}
+  .stat .v{font-size:24px;font-weight:800;margin-top:2px}
+  .viz{display:grid;grid-template-rows:auto 1fr auto;min-height:730px}
+  .tabs{display:flex;gap:8px;padding:12px;border-bottom:1px solid var(--line);align-items:center;flex-wrap:wrap}
+  .tabs button{padding:7px 10px;font-size:13px}
+  .tabs button.active{background:#eef4ff;border-color:#9db7d7;color:#1b4b7a;font-weight:700}
+  #canvasWrap{position:relative;min-height:560px}
+  canvas{display:block;width:100%;height:100%;background:#fff;border-radius:0 0 16px 16px}
+  .legend{display:flex;gap:14px;align-items:center;flex-wrap:wrap;padding:10px 14px;border-top:1px solid var(--line);font-size:12px;color:var(--muted)}
+  .dot{width:10px;height:10px;border-radius:999px;display:inline-block;margin-right:5px;border:1px solid rgba(0,0,0,.15)}
+  .note{padding:12px 16px;border-top:1px solid var(--line);font-size:13px;color:var(--muted);line-height:1.5;background:#fcfcfd;border-radius:0 0 16px 16px}
+  .formula{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:#f2f4f7;border:1px solid #e4e7ec;border-radius:10px;padding:10px;color:#344054}
+  .warn{color:var(--warn);font-weight:700}
+  .ok{color:var(--green);font-weight:700}
+</style>
+</head>
+<body>
+<header>
+  <h1>Chao1 intuition: estimating missing nodes from singletons and doubletons</h1>
+  <div class="subtitle">
+    A toy visualization for explaining how a sampling process can suggest that some network nodes are probably missing.
+    Here “species” are network nodes/performers, and “detections” are sampled appearances in records. Chao1 uses the number of nodes seen once
+    and twice to estimate how many additional nodes remain unseen.
+  </div>
+</header>
+
+<main>
+  <section class="panel controls">
+    <div>
+      <label>Underlying population</label>
+      <select id="scenario">
+        <option value="longtail">Long tail: many rare nodes</option>
+        <option value="balanced">Balanced: most nodes similarly visible</option>
+        <option value="elite">Elite-heavy: a few very visible nodes</option>
+      </select>
+    </div>
+
+    <div>
+      <div class="row"><label for="samples">Number of sampled records</label><b id="samplesVal">80</b></div>
+      <input id="samples" type="range" min="10" max="450" step="5" value="80" />
+      <div class="small">Each record samples one node appearance. Repeated appearances reveal common nodes; rare nodes may appear once or not at all.</div>
+    </div>
+
+    <div>
+      <div class="row"><label for="networkNoise">Network context edges</label><b id="noiseVal">medium</b></div>
+      <input id="networkNoise" type="range" min="0" max="2" step="1" value="1" />
+      <div class="small">These edges are visual context only. Chao1 here estimates missing <b>nodes</b>, not missing edges.</div>
+    </div>
+
+    <div style="display:flex;gap:8px">
+      <button class="primary" id="resample">Resample</button>
+      <button id="animate">Animate sampling</button>
+    </div>
+
+    <div class="formula">
+      S<sub>Chao1</sub> = S<sub>obs</sub> + f₁² / (2f₂)<br/>
+      if f₂ = 0: S<sub>obs</sub> + f₁(f₁−1)/2
+    </div>
+
+    <div class="statgrid">
+      <div class="stat"><div class="k">Observed nodes</div><div class="v" id="sobs">0</div></div>
+      <div class="stat"><div class="k">Estimated total</div><div class="v" id="chao">0</div></div>
+      <div class="stat"><div class="k">Singletons f₁</div><div class="v" id="f1">0</div></div>
+      <div class="stat"><div class="k">Doubletons f₂</div><div class="v" id="f2">0</div></div>
+      <div class="stat"><div class="k">Estimated missing</div><div class="v" id="missing">0</div></div>
+      <div class="stat"><div class="k">True hidden nodes</div><div class="v" id="hidden">0</div></div>
+    </div>
+
+    <div class="small">
+      Interpretation: many singletons and few doubletons suggest a long tail of nodes that have not yet appeared in the sample.
+      Many doubletons suggest that the rare tail is becoming repeatedly observed, so the unseen estimate drops.
+    </div>
+  </section>
+
+  <section class="panel viz">
+    <div class="tabs">
+      <button class="tab active" data-view="network">Network sample</button>
+      <button class="tab" data-view="abundance">Detection counts</button>
+      <button class="tab" data-view="curve">Accumulation curve</button>
+      <span class="small">Click a view to change the explanation.</span>
+    </div>
+    <div id="canvasWrap"><canvas id="canvas"></canvas></div>
+    <div class="legend" id="legend"></div>
+    <div class="note" id="note"></div>
+  </section>
+</main>
+
+<script>
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+const scenarioEl = document.getElementById("scenario");
+const samplesEl = document.getElementById("samples");
+const samplesVal = document.getElementById("samplesVal");
+const noiseEl = document.getElementById("networkNoise");
+const noiseVal = document.getElementById("noiseVal");
+let view = "network";
+let seed = 7;
+let animTimer = null;
+
+function mulberry32(a){return function(){let t=a+=0x6D2B79F5;t=Math.imul(t^t>>>15,t|1);t^=t+Math.imul(t^t>>>7,t|61);return ((t^t>>>14)>>>0)/4294967296}}
+function weightedChoice(weights, rng){
+  const total = weights.reduce((a,b)=>a+b,0); let r = rng()*total;
+  for(let i=0;i<weights.length;i++){ r-=weights[i]; if(r<=0) return i; }
+  return weights.length-1;
+}
+function makePopulation(kind){
+  const N = kind==="balanced" ? 90 : kind==="elite" ? 120 : 140;
+  let weights = [];
+  for(let i=0;i<N;i++){
+    if(kind==="balanced") weights.push(0.7 + (i%7)*0.05);
+    else if(kind==="elite") weights.push(i<10 ? 14-i : Math.pow(i+6,-0.95)*12);
+    else weights.push(Math.pow(i+2,-1.15)*40);
+  }
+  const groups = Array.from({length:N},(_,i)=>i%8);
+  return {N, weights, groups};
+}
+function sampleCounts(pop, n, seedOffset=0){
+  const rng = mulberry32(seed + seedOffset);
+  const counts = Array(pop.N).fill(0);
+  for(let s=0;s<n;s++) counts[weightedChoice(pop.weights,rng)]++;
+  return counts;
+}
+function chao(counts){
+  const sobs = counts.filter(c=>c>0).length;
+  const f1 = counts.filter(c=>c===1).length;
+  const f2 = counts.filter(c=>c===2).length;
+  let est = f2>0 ? sobs + (f1*f1)/(2*f2) : sobs + (f1*(f1-1))/2;
+  return {sobs,f1,f2,est,missing:Math.max(0,est-sobs),hidden:counts.filter(c=>c===0).length};
+}
+function resize(){
+  const wrap = document.getElementById("canvasWrap");
+  const r = wrap.getBoundingClientRect();
+  const dpr = Math.max(1, window.devicePixelRatio||1);
+  canvas.width = Math.floor(r.width*dpr); canvas.height=Math.floor(r.height*dpr);
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  draw();
+}
+function state(){
+  const pop = makePopulation(scenarioEl.value);
+  const n = +samplesEl.value;
+  const counts = sampleCounts(pop,n);
+  const stats = chao(counts);
+  return {pop,n,counts,stats};
+}
+function updateStats(st){
+  document.getElementById("sobs").textContent = st.stats.sobs;
+  document.getElementById("chao").textContent = Math.round(st.stats.est);
+  document.getElementById("f1").textContent = st.stats.f1;
+  document.getElementById("f2").textContent = st.stats.f2;
+  document.getElementById("missing").textContent = Math.round(st.stats.missing);
+  document.getElementById("hidden").textContent = st.stats.hidden;
+  samplesVal.textContent = st.n;
+  noiseVal.textContent = ["none","medium","dense"][+noiseEl.value];
+}
+function palette(g, observed){
+  if(!observed) return "#e5e7eb";
+  const cols=["#2f5f8f","#6b8f2f","#8f4f2f","#8f2f6b","#2f8f79","#6a5acd","#9a6b2f","#2f738f"];
+  return cols[g%cols.length];
+}
+function layoutNodes(pop, counts, w, h){
+  const rng = mulberry32(999);
+  const centers = [];
+  const cx=w*0.52, cy=h*0.5, R=Math.min(w,h)*0.30;
+  for(let g=0;g<8;g++){
+    const a = -Math.PI/2 + g*Math.PI*2/8;
+    centers.push([cx+Math.cos(a)*R, cy+Math.sin(a)*R]);
+  }
+  return Array.from({length:pop.N},(_,i)=>{
+    const [gx,gy]=centers[pop.groups[i]];
+    const rank = i/pop.N;
+    const rr = counts[i]>0 ? 70*rng() : 105+45*rng();
+    const a = rng()*Math.PI*2;
+    return {id:i,x:gx+Math.cos(a)*rr,y:gy+Math.sin(a)*rr,c:counts[i],g:pop.groups[i],r:counts[i]>0?Math.min(16,5+Math.sqrt(counts[i])*3):3.2};
+  });
+}
+function drawNetwork(st,w,h){
+  const nodes = layoutNodes(st.pop, st.counts, w, h);
+  ctx.clearRect(0,0,w,h);
+  ctx.fillStyle="#fff"; ctx.fillRect(0,0,w,h);
+  ctx.lineCap="round";
+
+  const noise = +noiseEl.value;
+  if(noise>0){
+    const observed = nodes.filter(n=>n.c>0);
+    for(let i=0;i<observed.length;i++){
+      for(let j=i+1;j<observed.length;j++){
+        const a=observed[i], b=observed[j];
+        const same = a.g===b.g;
+        const p = same ? (noise===1?0.035:0.09) : (noise===1?0.003:0.01);
+        const rng = mulberry32((a.id+1)*7919+(b.id+1)*104729+seed);
+        if(rng()<p){
+          ctx.strokeStyle = same ? "rgba(47,95,143,.16)" : "rgba(80,80,80,.08)";
+          ctx.lineWidth = same ? 1.2 : .7;
+          ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
+        }
+      }
+    }
+  }
+
+  for(const n of nodes){
+    ctx.beginPath(); ctx.arc(n.x,n.y,n.r,0,Math.PI*2);
+    ctx.fillStyle=palette(n.g,n.c>0); ctx.globalAlpha=n.c>0?0.92:0.35; ctx.fill();
+    ctx.globalAlpha=1; ctx.strokeStyle=n.c===1?"#b45309":n.c===2?"#267a3e":"rgba(0,0,0,.22)";
+    ctx.lineWidth=n.c===1?3:n.c===2?3:1;
+    ctx.stroke();
+  }
+  ctx.fillStyle="#344054"; ctx.font="13px system-ui"; ctx.fillText("Each circle is a possible node. Grey nodes are truly present in the population but unseen in the current sample.",18,24);
+  document.getElementById("legend").innerHTML = `
+    <span><span class="dot" style="background:#2f5f8f"></span>observed node</span>
+    <span><span class="dot" style="background:#e5e7eb"></span>unseen node</span>
+    <span><span class="dot" style="background:white;border:3px solid #b45309"></span>singleton: seen once</span>
+    <span><span class="dot" style="background:white;border:3px solid #267a3e"></span>doubleton: seen twice</span>`;
+  document.getElementById("note").innerHTML =
+    `Chao1 does not inspect the edges here. It uses the frequency pattern of observed nodes.
+     <span class="warn">Singletons</span> are nodes seen once; <span class="ok">doubletons</span> are nodes seen twice.
+     If many nodes are still singletons, the sample probably has not exhausted the population.`;
+}
+function drawAbundance(st,w,h){
+  ctx.clearRect(0,0,w,h); ctx.fillStyle="#fff"; ctx.fillRect(0,0,w,h);
+  const counts = st.counts.map((c,i)=>({c,i,g:st.pop.groups[i]})).sort((a,b)=>b.c-a.c);
+  const maxC=Math.max(1,...counts.map(d=>d.c));
+  const margin={l:55,r:25,t:45,b:50}, plotW=w-margin.l-margin.r, plotH=h-margin.t-margin.b;
+  ctx.strokeStyle="#e5e7eb"; ctx.lineWidth=1;
+  for(let k=0;k<=5;k++){const y=margin.t+plotH*k/5;ctx.beginPath();ctx.moveTo(margin.l,y);ctx.lineTo(w-margin.r,y);ctx.stroke();}
+  const bw=plotW/counts.length;
+  counts.forEach((d,idx)=>{
+    const bh=(d.c/maxC)*plotH;
+    ctx.fillStyle=d.c===0?"#e5e7eb":d.c===1?"#b45309":d.c===2?"#267a3e":palette(d.g,true);
+    ctx.fillRect(margin.l+idx*bw, margin.t+plotH-bh, Math.max(1,bw*.85), bh);
+  });
+  ctx.fillStyle="#344054"; ctx.font="13px system-ui"; ctx.fillText("Ranked node detection counts: long bars are common nodes, tiny bars are rare detections.",18,24);
+  ctx.save(); ctx.translate(16,h/2); ctx.rotate(-Math.PI/2); ctx.fillText("sampled appearances",0,0); ctx.restore();
+  ctx.fillText("nodes ranked by frequency", w/2-70, h-16);
+  document.getElementById("legend").innerHTML = `
+    <span><span class="dot" style="background:#b45309"></span>seen once: f₁</span>
+    <span><span class="dot" style="background:#267a3e"></span>seen twice: f₂</span>
+    <span><span class="dot" style="background:#e5e7eb"></span>not yet seen</span>`;
+  document.getElementById("note").innerHTML =
+    `This view explains the estimator. A long right-hand tail with many one-time detections means the sample is still discovering rare nodes.
+     When one-time detections become two-time detections, Chao1 becomes more confident that the unseen tail is smaller.`;
+}
+function drawCurve(st,w,h){
+  ctx.clearRect(0,0,w,h); ctx.fillStyle="#fff"; ctx.fillRect(0,0,w,h);
+  const pop = makePopulation(scenarioEl.value);
+  const maxN=450, step=5;
+  let pts=[];
+  for(let n=5;n<=maxN;n+=step){
+    const counts=sampleCounts(pop,n,123);
+    const s=chao(counts);
+    pts.push({n,obs:s.sobs,est:Math.min(pop.N*1.8,s.est),trueN:pop.N});
+  }
+  const margin={l:58,r:32,t:42,b:52}, plotW=w-margin.l-margin.r, plotH=h-margin.t-margin.b;
+  const maxY=Math.max(pop.N, ...pts.map(p=>p.est))*1.05;
+  function X(n){return margin.l+(n/maxN)*plotW}
+  function Y(y){return margin.t+plotH-(y/maxY)*plotH}
+  ctx.strokeStyle="#e5e7eb"; ctx.lineWidth=1;
+  for(let k=0;k<=5;k++){const y=margin.t+plotH*k/5;ctx.beginPath();ctx.moveTo(margin.l,y);ctx.lineTo(w-margin.r,y);ctx.stroke();}
+  ctx.strokeStyle="rgba(0,0,0,.35)"; ctx.setLineDash([6,5]); ctx.beginPath(); ctx.moveTo(margin.l,Y(pop.N)); ctx.lineTo(w-margin.r,Y(pop.N)); ctx.stroke(); ctx.setLineDash([]);
+  ctx.strokeStyle="#8f4f2f"; ctx.lineWidth=3; ctx.beginPath();
+  pts.forEach((p,i)=>{if(i===0)ctx.moveTo(X(p.n),Y(p.est));else ctx.lineTo(X(p.n),Y(p.est));}); ctx.stroke();
+  ctx.strokeStyle="#2f5f8f"; ctx.lineWidth=3; ctx.beginPath();
+  pts.forEach((p,i)=>{if(i===0)ctx.moveTo(X(p.n),Y(p.obs));else ctx.lineTo(X(p.n),Y(p.obs));}); ctx.stroke();
+  const curX=X(st.n);
+  ctx.strokeStyle="rgba(180,83,9,.65)"; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(curX,margin.t); ctx.lineTo(curX,margin.t+plotH); ctx.stroke();
+  ctx.fillStyle="#344054"; ctx.font="13px system-ui"; ctx.fillText("Accumulation curve: observed nodes usually rise slowly; Chao1 estimates the likely asymptote.",18,24);
+  ctx.fillText("sampled records", w/2-45, h-16);
+  ctx.save(); ctx.translate(16,h/2+50); ctx.rotate(-Math.PI/2); ctx.fillText("number of nodes",0,0); ctx.restore();
+  document.getElementById("legend").innerHTML = `
+    <span><span class="dot" style="background:#2f5f8f"></span>observed nodes</span>
+    <span><span class="dot" style="background:#8f4f2f"></span>Chao1 estimated total</span>
+    <span><span class="dot" style="background:#fff;border-style:dashed"></span>true toy population</span>
+    <span><span class="dot" style="background:#b45309"></span>current sample size</span>`;
+  document.getElementById("note").innerHTML =
+    `For real archival data, the dashed “true population” is unknown. The point of Chao1 is to use the rare detections in the observed sample
+     to infer whether many nodes are likely still missing.`;
+}
+function draw(){
+  const w=canvas.clientWidth, h=canvas.clientHeight;
+  const st=state(); updateStats(st);
+  if(view==="network") drawNetwork(st,w,h);
+  if(view==="abundance") drawAbundance(st,w,h);
+  if(view==="curve") drawCurve(st,w,h);
+}
+document.querySelectorAll(".tab").forEach(btn=>{
+  btn.onclick=()=>{document.querySelectorAll(".tab").forEach(b=>b.classList.remove("active"));btn.classList.add("active");view=btn.dataset.view;draw();}
+});
+scenarioEl.onchange=draw; samplesEl.oninput=draw; noiseEl.oninput=draw;
+document.getElementById("resample").onclick=()=>{seed+=101;draw();}
+document.getElementById("animate").onclick=()=>{
+  if(animTimer){clearInterval(animTimer);animTimer=null;document.getElementById("animate").textContent="Animate sampling";return;}
+  samplesEl.value=10; document.getElementById("animate").textContent="Stop animation";
+  animTimer=setInterval(()=>{
+    let v=+samplesEl.value+5; if(v>450)v=10; samplesEl.value=v; draw();
+  },110);
+};
+window.addEventListener("resize",resize);
+resize();
+</script>
+</body>
+</html>

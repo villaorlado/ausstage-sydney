@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Chao1 for incomplete performance archives</title>
+<style>
+:root{
+  --bg:#fbfaf7; --card:#fff; --ink:#1f2937; --muted:#667085; --line:#d0d5dd;
+  --blue:#2f5f8f; --orange:#b45309; --green:#267a3e; --red:#b42318; --purple:#6941c6;
+  --pale:#f2f4f7; --yellow:#fef7c3;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
+header{padding:22px 28px 16px;background:#fff;border-bottom:1px solid var(--line)}
+h1{margin:0 0 8px;font-size:23px}
+.subtitle{max-width:1150px;font-size:14px;line-height:1.48;color:var(--muted)}
+main{max-width:1600px;margin:0 auto;padding:18px;display:grid;grid-template-columns:330px 1fr;gap:18px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:0 2px 8px rgba(16,24,40,.04)}
+.controls{padding:16px;display:flex;flex-direction:column;gap:16px}
+label{font-weight:750;font-size:13px;margin-bottom:6px;display:block}
+input[type=range]{width:100%}
+button,select{font:inherit;border:1px solid var(--line);background:white;border-radius:10px;padding:8px 10px;color:var(--ink)}
+button{cursor:pointer}
+button.primary{background:var(--blue);color:white;border-color:var(--blue)}
+.row{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center}
+.small{font-size:12px;color:var(--muted);line-height:1.43}
+.formula{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:#f2f4f7;border:1px solid #e4e7ec;border-radius:10px;padding:10px;color:#344054;font-size:13px;line-height:1.5}
+.grid{display:grid;grid-template-columns:1.1fr 1.1fr 1fr;gap:16px;padding:16px}
+.subgrid{display:grid;grid-template-rows:auto 1fr;min-height:680px}
+.sectionHead{padding:14px 14px 10px;border-bottom:1px solid var(--line)}
+h2{margin:0;font-size:16px}
+.explain{font-size:12px;color:var(--muted);line-height:1.45;margin-top:5px}
+.list{padding:12px;overflow:auto;max-height:595px}
+.performance{border:1px solid var(--line);border-radius:12px;margin-bottom:8px;padding:9px;background:#fff}
+.performance.missing{background:#f8f8f8;opacity:.48}
+.performance.partial{background:#fffaf0;border-color:#fedf89}
+.pid{font-weight:800;font-size:12px;color:#344054;display:flex;justify-content:space-between;margin-bottom:6px}
+.actors{display:flex;gap:5px;flex-wrap:wrap}
+.actor{font-size:12px;border:1px solid #cfd8e3;background:#eef4ff;color:#1b4b7a;border-radius:999px;padding:3px 7px}
+.actor.missed{background:#fee4e2;color:#912018;border-color:#fecdca;text-decoration:line-through;opacity:.75}
+.actor.singleton{background:#fff7ed;color:#9a3412;border-color:#fed7aa}
+.actor.doubleton{background:#ecfdf3;color:#166534;border-color:#bbf7d0}
+.metrics{padding:16px;display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.metric{border:1px solid var(--line);background:#fcfcfd;border-radius:13px;padding:11px}
+.metric .k{font-size:12px;color:var(--muted);line-height:1.3}
+.metric .v{font-size:25px;font-weight:850;margin-top:2px}
+.metric.big{grid-column:span 2;background:#eef4ff;border-color:#b6cce5}
+.metric.warn{background:#fff7ed;border-color:#fed7aa}
+.metric.good{background:#ecfdf3;border-color:#bbf7d0}
+.analysis{display:grid;grid-template-rows:auto auto 1fr}
+.freqWrap{padding:0 16px 16px}
+.table{width:100%;border-collapse:collapse;font-size:12px}
+.table th,.table td{border-bottom:1px solid #eaecf0;padding:6px;text-align:left}
+.table th{color:#475467;font-size:11px;text-transform:uppercase;letter-spacing:.03em}
+.barbox{height:10px;background:#eef2f6;border-radius:999px;overflow:hidden;width:100%}
+.bar{height:100%;background:var(--blue);border-radius:999px}
+.note{margin:0 16px 16px;padding:12px;border:1px solid #fedf89;background:#fffbeb;border-radius:13px;font-size:13px;line-height:1.48;color:#664d03}
+.legend{padding:12px 16px;border-top:1px solid var(--line);display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
+.dot{display:inline-block;width:10px;height:10px;border-radius:999px;margin-right:5px;border:1px solid rgba(0,0,0,.15);vertical-align:-1px}
+.hiddenTruth .performance:not(.observedTruth){filter:blur(3px)}
+.hiddenTruth .performance:not(.observedTruth) .actors{visibility:hidden}
+@media(max-width:1100px){main{grid-template-columns:1fr}.grid{grid-template-columns:1fr}.subgrid{min-height:auto}.list{max-height:none}.metrics{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Chao1 for incomplete performance archives</h1>
+  <div class="subtitle">
+    This toy model treats each performance as an event containing a set of actors. In the observed archive, some performances may be missing entirely,
+    and some recorded performances may omit actors. From the observed time slice, we count actors who appear once
+    (<b>singletons, f₁</b>) and twice (<b>doubletons, f₂</b>) to estimate unseen actors with Chao1.
+  </div>
+</header>
+
+<main>
+  <section class="panel controls">
+    <div>
+      <label>Time slice</label>
+      <select id="slice">
+        <option value="1950">1950–1954</option>
+        <option value="1960">1960–1964</option>
+        <option value="1970">1970–1974</option>
+      </select>
+      <div class="small" id="sliceDesc"></div>
+    </div>
+
+    <div>
+      <div class="row"><label for="perfKeep">Performances preserved in archive</label><b id="perfKeepVal">60%</b></div>
+      <input id="perfKeep" type="range" min="20" max="100" step="5" value="60">
+      <div class="small">Missing performances create missing actor appearances and may hide actors entirely.</div>
+    </div>
+
+    <div>
+      <div class="row"><label for="actorKeep">Actors noted within preserved performances</label><b id="actorKeepVal">85%</b></div>
+      <input id="actorKeep" type="range" min="45" max="100" step="5" value="85">
+      <div class="small">This simulates partial cast lists: the performance survives, but not every actor is named.</div>
+    </div>
+
+    <div>
+      <div class="row"><label for="numPerf">Number of real performances</label><b id="numPerfVal">24</b></div>
+      <input id="numPerf" type="range" min="12" max="42" step="2" value="24">
+    </div>
+
+    <div>
+      <label>Participation pattern</label>
+      <select id="pattern">
+        <option value="longtail">Long tail</option>
+        <option value="troupe">Troupe-heavy</option>
+        <option value="balanced">Balanced</option>
+      </select>
+      <div class="small" id="patternDesc"></div>
+    </div>
+
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="primary" id="resample">Resample observation</button>
+      <button id="toggleTruth">Hide full truth</button>
+    </div>
+
+    <div class="formula">
+      S<sub>Chao1</sub> = S<sub>obs</sub> + f₁² / (2f₂)<br>
+      if f₂ = 0: S<sub>obs</sub> + f₁(f₁−1)/2
+    </div>
+
+    <div class="small">
+      In this demo, the “truth” is known only because the data are simulated. In a real archive, the true number of actors and performances is precisely what we do not know.
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="grid">
+      <section class="panel subgrid">
+        <div class="sectionHead">
+          <h2>1. Real performances</h2>
+          <div class="explain">The hidden historical population for one fixed time slice. Each row is a performance; each pill is an actor.</div>
+        </div>
+        <div class="list" id="realList"></div>
+      </section>
+
+      <section class="panel subgrid">
+        <div class="sectionHead">
+          <h2>2. Observed archive</h2>
+          <div class="explain">Some performances disappear. Some actors are omitted from surviving records.</div>
+        </div>
+        <div class="list" id="obsList"></div>
+      </section>
+
+      <section class="panel analysis">
+        <div>
+          <div class="sectionHead">
+            <h2>3. What Chao1 sees</h2>
+            <div class="explain">Counts are computed only from observed actor appearances in this time slice.</div>
+          </div>
+          <div class="metrics">
+            <div class="metric"><div class="k">Observed actors S<sub>obs</sub></div><div class="v" id="sobs">0</div></div>
+            <div class="metric big"><div class="k">Chao1 score</div><div class="v" id="chao">0</div><div class="k">estimated total actors</div></div>
+            <div class="metric warn"><div class="k">Singletons f₁</div><div class="v" id="f1">0</div></div>
+            <div class="metric good"><div class="k">Doubletons f₂</div><div class="v" id="f2">0</div></div>
+            <div class="metric"><div class="k">Estimated captured</div><div class="v" id="captured">0%</div><div class="k">S<sub>obs</sub> ÷ Chao1</div></div>
+            <div class="metric"><div class="k">Estimated missing actors</div><div class="v" id="missing">0</div></div>
+            <div class="metric"><div class="k">True actors</div><div class="v" id="trueActors">0</div></div>
+            <div class="metric"><div class="k">Truly hidden actors</div><div class="v" id="hiddenActors">0</div></div>
+          </div>
+          <div class="note" id="interpretation"></div>
+        </div>
+
+        <div class="freqWrap">
+          <h2 style="font-size:15px;margin:0 0 8px">Actor appearance frequencies</h2>
+          <table class="table">
+            <thead><tr><th>Actor</th><th>True</th><th>Observed</th><th>Observed frequency</th></tr></thead>
+            <tbody id="freqTable"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+    <div class="legend">
+      <span><span class="dot" style="background:#eef4ff"></span>observed actor</span>
+      <span><span class="dot" style="background:#fff7ed"></span>singleton</span>
+      <span><span class="dot" style="background:#ecfdf3"></span>doubleton</span>
+      <span><span class="dot" style="background:#fee4e2"></span>actor omitted from a preserved performance</span>
+      <span><span class="dot" style="background:#f2f4f7"></span>missing performance</span>
+    </div>
+  </section>
+</main>
+
+<script>
+let seed = 42;
+let hideTruth = false;
+const actors = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("").concat(["AA","AB","AC","AD","AE","AF","AG","AH","AI","AJ","AK","AL"]);
+
+function rngFactory(a){return function(){let t=a+=0x6D2B79F5;t=Math.imul(t^t>>>15,t|1);t^=t+Math.imul(t^t>>>7,t|61);return ((t^t>>>14)>>>0)/4294967296}}
+function choiceWeighted(items, weights, rng){
+  const total = weights.reduce((a,b)=>a+b,0); let r = rng()*total;
+  for(let i=0;i<items.length;i++){r-=weights[i]; if(r<=0)return items[i]}
+  return items[items.length-1]
+}
+function shuffle(arr,rng){const a=[...arr];for(let i=a.length-1;i>0;i--){const j=Math.floor(rng()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
+function uniq(a){return [...new Set(a)]}
+
+function makePerformances(){
+  const slice = document.getElementById("slice").value;
+  const pattern = document.getElementById("pattern").value;
+  const nPerf = +document.getElementById("numPerf").value;
+  const baseSeed = slice==="1950"?1000:slice==="1960"?2000:3000;
+  const rng = rngFactory(baseSeed + nPerf*17 + (pattern==="longtail"?1:pattern==="troupe"?2:3));
+
+  const poolSize = pattern==="balanced"?26:pattern==="troupe"?32:36;
+  const pool = actors.slice(0,poolSize);
+  let weights = pool.map((_,i)=>{
+    if(pattern==="balanced") return 1 + (i%4)*0.12;
+    if(pattern==="troupe") return i<8 ? 8-i*0.45 : Math.pow(i+2,-0.9)*8;
+    return Math.pow(i+1,-1.15)*12;
+  });
+
+  const troupes = [
+    pool.slice(0,8), pool.slice(6,15), pool.slice(14,24), pool.slice(22,32), pool.slice(4,12)
+  ];
+
+  let perfs=[];
+  for(let p=0;p<nPerf;p++){
+    let size = 3 + Math.floor(rng()*5); // 3-7
+    let cast=[];
+    if(pattern==="troupe" && rng()<0.68){
+      const troupe = troupes[p % troupes.length].filter(Boolean);
+      cast = shuffle(troupe,rng).slice(0,size);
+      if(rng()<0.35) cast.push(choiceWeighted(pool,weights,rng));
+    } else {
+      while(cast.length<size) cast.push(choiceWeighted(pool,weights,rng));
+    }
+    cast = uniq(cast).slice(0,size);
+    while(cast.length<3) cast.push(choiceWeighted(pool,weights,rng)), cast=uniq(cast);
+    perfs.push({id:`P${String(p+1).padStart(2,"0")}`, cast});
+  }
+  return perfs;
+}
+
+function observe(perfs){
+  const keepP = +document.getElementById("perfKeep").value/100;
+  const keepA = +document.getElementById("actorKeep").value/100;
+  const rng = rngFactory(seed);
+  return perfs.map((p,idx)=>{
+    const preserved = rng() < keepP;
+    let observedCast = [];
+    let omittedCast = [];
+    if(preserved){
+      for(const a of p.cast){
+        if(rng()<keepA) observedCast.push(a); else omittedCast.push(a);
+      }
+      if(observedCast.length===0 && p.cast.length>0){
+        observedCast.push(p.cast[0]);
+        omittedCast = omittedCast.filter(x=>x!==p.cast[0]);
+      }
+    }
+    return {...p, preserved, observedCast, omittedCast};
+  });
+}
+
+function countsFrom(perfs, key){
+  const c = {};
+  for(const p of perfs) for(const a of p[key]) c[a]=(c[a]||0)+1;
+  return c;
+}
+function chao(obsCounts){
+  const vals = Object.values(obsCounts);
+  const sobs = vals.filter(v=>v>0).length;
+  const f1 = vals.filter(v=>v===1).length;
+  const f2 = vals.filter(v=>v===2).length;
+  const est = f2>0 ? sobs + (f1*f1)/(2*f2) : sobs + f1*(f1-1)/2;
+  return {sobs,f1,f2,est,missing:Math.max(0,est-sobs),captured:est>0 ? sobs/est : 0};
+}
+function actorClass(a, obsCounts){
+  const c = obsCounts[a]||0;
+  if(c===1) return "singleton";
+  if(c===2) return "doubleton";
+  return "";
+}
+function renderPerformance(p, obsCounts, mode){
+  if(mode==="real"){
+    return `<div class="performance observedTruth">
+      <div class="pid"><span>${p.id}</span><span>${p.cast.length} actors</span></div>
+      <div class="actors">${p.cast.map(a=>`<span class="actor ${actorClass(a,obsCounts)}">${a}</span>`).join("")}</div>
+    </div>`;
+  }
+  if(!p.preserved){
+    return `<div class="performance missing">
+      <div class="pid"><span>${p.id}</span><span>missing from archive</span></div>
+      <div class="actors">${p.cast.map(a=>`<span class="actor missed">${a}</span>`).join("")}</div>
+    </div>`;
+  }
+  const partial = p.omittedCast.length ? "partial" : "";
+  return `<div class="performance ${partial}">
+    <div class="pid"><span>${p.id}</span><span>${p.observedCast.length}/${p.cast.length} actors noted</span></div>
+    <div class="actors">
+      ${p.observedCast.map(a=>`<span class="actor ${actorClass(a,obsCounts)}">${a}</span>`).join("")}
+      ${p.omittedCast.map(a=>`<span class="actor missed">${a}</span>`).join("")}
+    </div>
+  </div>`;
+}
+
+function render(){
+  const perfs = makePerformances();
+  const observed = observe(perfs);
+  const trueCounts = countsFrom(perfs,"cast");
+  const obsCounts = {};
+  for(const p of observed) for(const a of p.observedCast) obsCounts[a]=(obsCounts[a]||0)+1;
+  const stats = chao(obsCounts);
+  const trueActors = Object.keys(trueCounts).length;
+  const hiddenActors = Object.keys(trueCounts).filter(a=>!obsCounts[a]).length;
+
+  document.getElementById("perfKeepVal").textContent = document.getElementById("perfKeep").value + "%";
+  document.getElementById("actorKeepVal").textContent = document.getElementById("actorKeep").value + "%";
+  document.getElementById("numPerfVal").textContent = document.getElementById("numPerf").value;
+
+  const sliceDesc = {
+    "1950":"A compact five-year slice. The archive is treated as one fixed observed sample.",
+    "1960":"Same logic, different simulated underlying casts and performances.",
+    "1970":"Another simulated time slice; compare how the same preservation rate can behave differently."
+  };
+  document.getElementById("sliceDesc").textContent = sliceDesc[document.getElementById("slice").value];
+
+  const patternDesc = {
+    longtail:"A few actors recur often, but many appear rarely.",
+    troupe:"Several recurring ensembles produce repeated co-occurrence.",
+    balanced:"Most actors have roughly similar chances of appearing."
+  };
+  document.getElementById("patternDesc").textContent = patternDesc[document.getElementById("pattern").value];
+
+  const realList = document.getElementById("realList");
+  realList.className = hideTruth ? "list hiddenTruth" : "list";
+  realList.innerHTML = perfs.map(p=>renderPerformance(p,obsCounts,"real")).join("");
+
+  document.getElementById("obsList").innerHTML = observed.map(p=>renderPerformance(p,obsCounts,"obs")).join("");
+
+  document.getElementById("sobs").textContent = stats.sobs;
+  document.getElementById("chao").textContent = stats.est.toFixed(1);
+  document.getElementById("f1").textContent = stats.f1;
+  document.getElementById("f2").textContent = stats.f2;
+  document.getElementById("captured").textContent = (stats.captured*100).toFixed(1)+"%";
+  document.getElementById("missing").textContent = Math.round(stats.missing);
+  document.getElementById("trueActors").textContent = trueActors;
+  document.getElementById("hiddenActors").textContent = hiddenActors;
+
+  let msg = "";
+  if(stats.f2===0) msg = "There are no doubletons, so the fallback formula is used. This usually signals a very thin sample.";
+  else if(stats.f1 > stats.f2*2) msg = "Singletons greatly outnumber doubletons. Chao1 interprets this as evidence of many unseen actors.";
+  else if(stats.captured > .85) msg = "Observed actors are close to the Chao1 estimate. Under this toy process, the archive looks relatively complete.";
+  else msg = "The estimate sits between the observed count and the hidden truth. The gap is driven by the balance between one-time and two-time observed actors.";
+  document.getElementById("interpretation").innerHTML =
+    `<b>Interpretation:</b> ${msg}<br><br>
+    This demo separates two uncertainties: <b>missing performances</b> and <b>missing actors inside preserved performances</b>.
+    Chao1 sees only their combined effect in the observed frequency counts.`;
+
+  const allActors = Object.keys(trueCounts).sort((a,b)=>(obsCounts[b]||0)-(obsCounts[a]||0) || trueCounts[b]-trueCounts[a] || a.localeCompare(b));
+  const maxObs = Math.max(1,...allActors.map(a=>obsCounts[a]||0));
+  document.getElementById("freqTable").innerHTML = allActors.map(a=>{
+    const oc = obsCounts[a]||0, tc=trueCounts[a];
+    const cls = oc===1 ? "singleton" : oc===2 ? "doubleton" : "";
+    return `<tr>
+      <td><span class="actor ${cls}">${a}</span></td>
+      <td>${tc}</td>
+      <td>${oc || "—"}</td>
+      <td><div class="barbox"><div class="bar" style="width:${100*oc/maxObs}%;background:${oc===1?"var(--orange)":oc===2?"var(--green)":"var(--blue)"}"></div></div></td>
+    </tr>`
+  }).join("");
+}
+
+for(const id of ["slice","perfKeep","actorKeep","numPerf","pattern"]){
+  document.getElementById(id).addEventListener("input", render);
+  document.getElementById(id).addEventListener("change", render);
+}
+document.getElementById("resample").onclick = ()=>{seed+=97;render()};
+document.getElementById("toggleTruth").onclick = ()=>{
+  hideTruth = !hideTruth;
+  document.getElementById("toggleTruth").textContent = hideTruth ? "Show full truth" : "Hide full truth";
+  render();
+};
+render();
+</script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+{
+  "watersheds": [
+    { "year": 1950, "label": "television" },
+    { "year": 1976, "label": "opera house" }
+  ],
+  "high_confidence": [
+    { "start": 1940, "end": 1976 }
+  ]
+}

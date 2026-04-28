@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ABM Network Shock Visualization</title>
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --border: #e2e8f0;
+      --text: #0f172a;
+      --muted: #64748b;
+      --blue: #2563eb;
+      --orange: #f97316;
+      --green: #16a34a;
+      --red: #dc2626;
+      --grey-edge: #cbd5e1;
+      --shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    .page {
+      max-width: 1360px;
+      margin: 0 auto;
+      padding: 28px;
+    }
+
+    .eyebrow {
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    h1 {
+      margin: 8px 0 8px;
+      font-size: 34px;
+      line-height: 1.1;
+      letter-spacing: -0.03em;
+    }
+
+    .subtitle {
+      max-width: 850px;
+      color: var(--muted);
+      font-size: 16px;
+      line-height: 1.55;
+      margin: 0 0 22px;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 330px minmax(0, 1fr);
+      gap: 20px;
+      align-items: start;
+    }
+
+    .stack { display: grid; gap: 16px; }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .card-inner { padding: 18px; }
+    .section-title { font-weight: 800; font-size: 15px; margin-bottom: 4px; }
+    .small { color: var(--muted); font-size: 13px; line-height: 1.45; }
+    .stage-title { color: var(--blue); font-weight: 800; margin: 8px 0; }
+    .stage-text { color: var(--muted); font-size: 14px; line-height: 1.55; min-height: 86px; }
+
+    .button-row { display: flex; gap: 8px; flex-wrap: wrap; }
+    button {
+      appearance: none;
+      border: 1px solid var(--border);
+      background: #fff;
+      color: var(--text);
+      padding: 9px 12px;
+      border-radius: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: 0.15s ease;
+    }
+    button:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08); }
+    button.primary { background: var(--text); color: white; border-color: var(--text); }
+    button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; box-shadow: none; }
+
+    .control { margin: 18px 0; }
+    .control-head { display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 8px; }
+    .control-head strong { color: var(--text); }
+    input[type="range"] { width: 100%; accent-color: var(--blue); }
+
+    .metric-grid { display: grid; gap: 12px; }
+    .metric-label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; font-weight: 800; }
+    .metric-value { font-size: 34px; font-weight: 900; line-height: 1.05; margin-top: 4px; }
+    .blue { color: var(--blue); } .orange { color: var(--orange); } .green { color: var(--green); } .red { color: var(--red); }
+
+    .main-grid { display: grid; gap: 18px; }
+    .panel-head {
+      display: flex;
+      align-items: start;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 18px 18px 0;
+    }
+    h2 { font-size: 18px; margin: 0 0 4px; }
+    .badge {
+      white-space: nowrap;
+      padding: 7px 11px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 800;
+      background: #dbeafe;
+      color: #1d4ed8;
+    }
+    .badge.shock { background: #ffedd5; color: #c2410c; }
+
+    .network-wrap { padding: 14px 18px 18px; }
+    svg { display: block; width: 100%; height: auto; }
+    #networkSvg {
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      background: white;
+      height: 520px;
+    }
+
+    .charts {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+    .chart-wrap { padding: 12px 18px 18px; }
+    .chart-svg { height: 290px; }
+    .legend { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 8px; font-size: 13px; color: var(--muted); }
+    .legend span::before {
+      content: "";
+      display: inline-block;
+      width: 18px;
+      height: 3px;
+      border-radius: 999px;
+      margin-right: 6px;
+      vertical-align: middle;
+      background: currentColor;
+    }
+
+    .claim { padding: 18px; color: var(--muted); line-height: 1.6; font-size: 14px; }
+    .claim strong { color: var(--text); }
+
+    @media (max-width: 1000px) {
+      .layout { grid-template-columns: 1fr; }
+      .charts { grid-template-columns: 1fr; }
+      h1 { font-size: 28px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header>
+      <div class="eyebrow">Agent-based intuition builder</div>
+      <h1>Why might funding-driven growth lower network clustering?</h1>
+      <p class="subtitle">
+        A toy ABM for theatre collaboration networks. Performers are nodes, yearly co-appearances create edges, and a funding shock changes the casting ecology.
+      </p>
+    </header>
+
+    <div class="layout">
+      <aside class="stack">
+        <section class="card">
+          <div class="card-inner">
+            <div class="section-title">Narrative stage</div>
+            <div id="stageTitle" class="stage-title"></div>
+            <div id="stageText" class="stage-text"></div>
+            <div class="button-row">
+              <button id="stageBack">Back</button>
+              <button id="stageNext" class="primary">Next</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-inner">
+            <div class="section-title">Simulation controls</div>
+            <div class="small">Tune the post-1975 mechanism.</div>
+
+            <div class="control">
+              <div class="control-head"><span>Funding shock size</span><strong id="shockValue">5</strong></div>
+              <input id="shockSlider" type="range" min="1" max="10" step="1" value="5" />
+              <div class="small">Higher values add more newcomers and productions after 1975.</div>
+            </div>
+
+            <div class="control">
+              <div class="control-head"><span>Cross-company mixer rate</span><strong id="mixerValue">5</strong></div>
+              <input id="mixerSlider" type="range" min="0" max="10" step="1" value="5" />
+              <div class="small">Higher values make new productions more likely to cast across companies.</div>
+            </div>
+
+            <div class="control">
+              <div class="control-head"><span>Year</span><strong id="yearValue">1970</strong></div>
+              <input id="yearSlider" type="range" min="0" max="11" step="1" value="0" />
+            </div>
+
+            <div class="button-row">
+              <button id="playButton" class="primary">Play</button>
+              <button id="stepButton">Step</button>
+              <button id="resetButton">Reset</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="metric-grid">
+          <div class="card"><div class="card-inner"><div class="metric-label">Performers</div><div id="performersMetric" class="metric-value blue"></div><div class="small">Nodes active this year</div></div></div>
+          <div class="card"><div class="card-inner"><div class="metric-label">Performances</div><div id="performancesMetric" class="metric-value orange"></div><div class="small">Productions cast this year</div></div></div>
+          <div class="card"><div class="card-inner"><div class="metric-label">Clustering</div><div id="clusteringMetric" class="metric-value green"></div><div class="small">Average local closure</div></div></div>
+        </section>
+      </aside>
+
+      <main class="main-grid">
+        <section class="card">
+          <div class="panel-head">
+            <div>
+              <h2>Yearly co-occurrence network</h2>
+              <div class="small">Grey edges are within-company co-appearances; red edges are cross-company mixer ties.</div>
+            </div>
+            <div id="statusBadge" class="badge">Baseline</div>
+          </div>
+          <div class="network-wrap">
+            <svg id="networkSvg" viewBox="0 0 680 500" role="img" aria-label="Animated co-occurrence network"></svg>
+          </div>
+        </section>
+
+        <section class="charts">
+          <div class="card">
+            <div class="panel-head"><div><h2>System growth</h2><div class="small">Funding increases performers and productions.</div></div></div>
+            <div class="chart-wrap">
+              <svg id="growthChart" class="chart-svg" viewBox="0 0 560 290"></svg>
+              <div class="legend"><span style="color: var(--blue)">Performers</span><span style="color: var(--orange)">Performances</span></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="panel-head"><div><h2>Network structure</h2><div class="small">Clustering falls when bridge ties outpace local closure.</div></div></div>
+            <div class="chart-wrap">
+              <svg id="structureChart" class="chart-svg" viewBox="0 0 560 290"></svg>
+              <div class="legend"><span style="color: var(--red)">Clustering</span><span style="color: var(--green)">Mixer share</span></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="claim">
+            <strong>Interpretive claim.</strong> This toy model separates <span class="blue">growth</span> from <span class="green">mixing</span>. If funding only adds productions inside existing company clusters, clustering tends to remain high. If funding also creates cross-company casting opportunities, the network can grow while clustering falls, because many new ties are bridges rather than closed triads.
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <script>
+    const YEARS = Array.from({ length: 12 }, (_, i) => 1970 + i);
+    const SHOCK_YEAR = 1975;
+    const companyPalette = ["#2563eb", "#16a34a", "#f97316", "#7c3aed", "#0891b2"];
+
+    let state = {
+      yearIndex: 0,
+      shockStrength: 5,
+      mixerRate: 5,
+      stage: 0,
+      playing: false,
+      timer: null,
+      years: []
+    };
+
+    const stageText = [
+      { title: "1. Stable field", text: "Companies mostly cast within their own circles. Performers repeatedly co-occur, creating dense local triangles and high clustering." },
+      { title: "2. Funding shock", text: "In 1975, funding expands the system: more productions are mounted and new performers enter the field." },
+      { title: "3. Mixer mechanism", text: "Some new productions cross company boundaries. These bridges add many ties, but not all of them close into triangles." },
+      { title: "4. Intuition", text: "Growth alone does not guarantee lower clustering. The drop appears when new activity creates cross-company ties faster than local triangles can form." }
+    ];
+
+    function seededRandom(seed) {
+      const x = Math.sin(seed) * 10000;
+      return x - Math.floor(x);
+    }
+
+    function pickWeighted(items, weights, seedBase) {
+      const total = weights.reduce((a, b) => a + b, 0);
+      let r = seededRandom(seedBase) * total;
+      for (let i = 0; i < items.length; i++) {
+        r -= weights[i];
+        if (r <= 0) return items[i];
+      }
+      return items[items.length - 1];
+    }
+
+    function combinations(arr) {
+      const pairs = [];
+      for (let i = 0; i < arr.length; i++) {
+        for (let j = i + 1; j < arr.length; j++) pairs.push([arr[i], arr[j]]);
+      }
+      return pairs;
+    }
+
+    function clusteringCoefficient(nodes, edgeSet) {
+      const neighbours = new Map(nodes.map(n => [n.id, new Set()]));
+      edgeSet.forEach(key => {
+        const [a, b] = key.split("--");
+        if (neighbours.has(a)) neighbours.get(a).add(b);
+        if (neighbours.has(b)) neighbours.get(b).add(a);
+      });
+      let total = 0;
+      let counted = 0;
+      nodes.forEach(node => {
+        const ns = Array.from(neighbours.get(node.id) || []);
+        const k = ns.length;
+        if (k < 2) return;
+        let actual = 0;
+        combinations(ns).forEach(([a, b]) => {
+          if (edgeSet.has([a, b].sort().join("--"))) actual++;
+        });
+        total += actual / ((k * (k - 1)) / 2);
+        counted++;
+      });
+      return counted ? total / counted : 0;
+    }
+
+    function generateYear(yearIndex, shockStrength, mixerRate) {
+      const year = YEARS[yearIndex];
+      const postShock = year >= SHOCK_YEAR;
+      const yearsAfterShock = Math.max(0, year - SHOCK_YEAR + 1);
+      const baseCompanies = 4;
+      const basePerformersPerCompany = 11;
+      const newcomerBoost = postShock ? Math.round(yearsAfterShock * shockStrength * 1.1) : 0;
+      const performancesBoost = postShock ? Math.round(yearsAfterShock * shockStrength * 1.4) : 0;
+      const nodes = [];
+
+      for (let c = 0; c < baseCompanies; c++) {
+        const extra = postShock ? Math.floor(newcomerBoost / baseCompanies) + (c < newcomerBoost % baseCompanies ? 1 : 0) : 0;
+        const count = basePerformersPerCompany + extra;
+        for (let i = 0; i < count; i++) {
+          const angle = (Math.PI * 2 * i) / count;
+          const centerAngle = (Math.PI * 2 * c) / baseCompanies - Math.PI / 4;
+          const cx = 320 + Math.cos(centerAngle) * 180;
+          const cy = 250 + Math.sin(centerAngle) * 130;
+          const jitter = 22 + seededRandom(year * 100 + c * 10 + i) * 18;
+          nodes.push({
+            id: `c${c}p${i}`,
+            company: c,
+            newcomer: postShock && i >= basePerformersPerCompany,
+            x: cx + Math.cos(angle) * jitter,
+            y: cy + Math.sin(angle) * jitter
+          });
+        }
+      }
+
+      const edgeSet = new Set();
+      const productions = [];
+      const performanceCount = 22 + performancesBoost;
+      const effectiveMixerRate = postShock ? Math.min(0.7, mixerRate * yearsAfterShock * 0.08) : 0.03;
+
+      for (let p = 0; p < performanceCount; p++) {
+        const castSize = 4 + Math.floor(seededRandom(year * 1000 + p) * 3);
+        const isMixer = seededRandom(year * 2000 + p) < effectiveMixerRate;
+        const homeCompany = Math.floor(seededRandom(year * 3000 + p) * baseCompanies);
+        const cast = [];
+        for (let s = 0; s < castSize; s++) {
+          const weights = nodes.map(n => {
+            if (!isMixer) return n.company === homeCompany ? 1 : 0.05;
+            const same = n.company === homeCompany ? 0.55 : 0.45;
+            return same * (n.newcomer ? 1.25 : 1);
+          });
+          const candidate = pickWeighted(nodes, weights, year * 4000 + p * 37 + s * 13);
+          if (!cast.includes(candidate.id)) cast.push(candidate.id);
+        }
+        productions.push({ cast, isMixer });
+        combinations(cast).forEach(([a, b]) => edgeSet.add([a, b].sort().join("--")));
+      }
+
+      const nodeMap = new Map(nodes.map(n => [n.id, n]));
+      const edges = Array.from(edgeSet).map(key => {
+        const [source, target] = key.split("--");
+        const a = nodeMap.get(source);
+        const b = nodeMap.get(target);
+        return { source, target, a, b, crossCompany: a.company !== b.company };
+      });
+
+      return {
+        year,
+        nodes,
+        edges,
+        productions,
+        performers: nodes.length,
+        performances: performanceCount,
+        clustering: clusteringCoefficient(nodes, edgeSet),
+        mixerShare: productions.filter(p => p.isMixer).length / productions.length
+      };
+    }
+
+    function regenerate() {
+      state.years = YEARS.map((_, i) => generateYear(i, state.shockStrength, state.mixerRate));
+    }
+
+    function svgEl(tag, attrs = {}) {
+      const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
+      for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+      return el;
+    }
+
+    function renderNetwork(current) {
+      const svg = document.getElementById("networkSvg");
+      svg.innerHTML = "";
+      svg.appendChild(svgEl("rect", { x: 0, y: 0, width: 680, height: 500, fill: "white" }));
+
+      if (current.year === SHOCK_YEAR) {
+        const label = svgEl("text", { x: 32, y: 44, fill: "#c2410c", "font-size": 18, "font-weight": 800 });
+        label.textContent = "Funding shock begins";
+        svg.appendChild(label);
+      }
+
+      current.edges.forEach(e => {
+        svg.appendChild(svgEl("line", {
+          x1: e.a.x, y1: e.a.y, x2: e.b.x, y2: e.b.y,
+          stroke: e.crossCompany ? "#ef4444" : "#cbd5e1",
+          "stroke-width": e.crossCompany ? 1.6 : 1,
+          opacity: e.crossCompany ? 0.58 : 0.38
+        }));
+      });
+
+      current.nodes.forEach(n => {
+        svg.appendChild(svgEl("circle", {
+          cx: n.x, cy: n.y, r: n.newcomer ? 5.8 : 4.4,
+          fill: n.newcomer ? "#f97316" : companyPalette[n.company],
+          stroke: "white", "stroke-width": 1.5, opacity: 0.95
+        }));
+      });
+
+      companyPalette.slice(0, 4).forEach((color, i) => {
+        const angle = (Math.PI * 2 * i) / 4 - Math.PI / 4;
+        const text = svgEl("text", {
+          x: 320 + Math.cos(angle) * 245,
+          y: 250 + Math.sin(angle) * 175,
+          "text-anchor": "middle",
+          fill: "#64748b",
+          "font-size": 12,
+          "font-weight": 800
+        });
+        text.textContent = `Company ${String.fromCharCode(65 + i)}`;
+        svg.appendChild(text);
+      });
+    }
+
+    function drawLineChart(svgId, data, series, options = {}) {
+      const svg = document.getElementById(svgId);
+      svg.innerHTML = "";
+      const W = 560, H = 290;
+      const margin = { top: 18, right: 32, bottom: 34, left: 44 };
+      const plotW = W - margin.left - margin.right;
+      const plotH = H - margin.top - margin.bottom;
+      const xMin = YEARS[0], xMax = YEARS[YEARS.length - 1];
+      const yMin = options.yMin ?? 0;
+      const yMax = options.yMax ?? Math.max(1, ...data.flatMap(d => series.map(s => d[s.key]))) * 1.1;
+      const sx = year => margin.left + ((year - xMin) / (xMax - xMin)) * plotW;
+      const sy = val => margin.top + plotH - ((val - yMin) / (yMax - yMin)) * plotH;
+
+      const grid = svgEl("g", {});
+      for (let i = 0; i <= 4; i++) {
+        const y = margin.top + (plotH * i) / 4;
+        grid.appendChild(svgEl("line", { x1: margin.left, y1: y, x2: W - margin.right, y2: y, stroke: "#e2e8f0", "stroke-dasharray": "3 3" }));
+        const label = svgEl("text", { x: margin.left - 10, y: y + 4, "text-anchor": "end", fill: "#64748b", "font-size": 11 });
+        label.textContent = (yMax - ((yMax - yMin) * i) / 4).toFixed(options.decimals ?? 0);
+        grid.appendChild(label);
+      }
+      svg.appendChild(grid);
+
+      svg.appendChild(svgEl("line", { x1: margin.left, y1: margin.top + plotH, x2: W - margin.right, y2: margin.top + plotH, stroke: "#94a3b8" }));
+      svg.appendChild(svgEl("line", { x1: margin.left, y1: margin.top, x2: margin.left, y2: margin.top + plotH, stroke: "#94a3b8" }));
+
+      YEARS.forEach(year => {
+        if (year % 2 === 0 || year === SHOCK_YEAR) {
+          const x = sx(year);
+          const label = svgEl("text", { x, y: H - 12, "text-anchor": "middle", fill: "#64748b", "font-size": 11 });
+          label.textContent = year;
+          svg.appendChild(label);
+        }
+      });
+
+      const shockX = sx(SHOCK_YEAR);
+      svg.appendChild(svgEl("line", { x1: shockX, y1: margin.top, x2: shockX, y2: margin.top + plotH, stroke: "#fb923c", "stroke-dasharray": "4 4", opacity: 0.7 }));
+
+      series.forEach(s => {
+        if (data.length < 2) return;
+        const points = data.map(d => `${sx(d.year)},${sy(d[s.key])}`).join(" ");
+        svg.appendChild(svgEl("polyline", { points, fill: "none", stroke: s.color, "stroke-width": 3, "stroke-linecap": "round", "stroke-linejoin": "round" }));
+        const last = data[data.length - 1];
+        svg.appendChild(svgEl("circle", { cx: sx(last.year), cy: sy(last[s.key]), r: 4, fill: s.color, stroke: "white", "stroke-width": 2 }));
+      });
+    }
+
+    function updateUI() {
+      const current = state.years[state.yearIndex];
+      const visible = state.years.slice(0, state.yearIndex + 1).map(d => ({
+        year: d.year,
+        performers: d.performers,
+        performances: d.performances,
+        clustering: Number(d.clustering.toFixed(2)),
+        mixerShare: Number((d.mixerShare * 100).toFixed(0))
+      }));
+
+      document.getElementById("stageTitle").textContent = stageText[state.stage].title;
+      document.getElementById("stageText").textContent = stageText[state.stage].text;
+      document.getElementById("stageBack").disabled = state.stage === 0;
+      document.getElementById("stageNext").disabled = state.stage === stageText.length - 1;
+
+      document.getElementById("shockValue").textContent = state.shockStrength;
+      document.getElementById("mixerValue").textContent = state.mixerRate;
+      document.getElementById("yearValue").textContent = current.year;
+      document.getElementById("yearSlider").value = state.yearIndex;
+      document.getElementById("shockSlider").value = state.shockStrength;
+      document.getElementById("mixerSlider").value = state.mixerRate;
+      document.getElementById("playButton").textContent = state.playing ? "Pause" : "Play";
+
+      document.getElementById("performersMetric").textContent = current.performers;
+      document.getElementById("performancesMetric").textContent = current.performances;
+      const clustering = document.getElementById("clusteringMetric");
+      clustering.textContent = current.clustering.toFixed(2);
+      clustering.className = `metric-value ${current.year >= SHOCK_YEAR ? "red" : "green"}`;
+
+      const badge = document.getElementById("statusBadge");
+      badge.textContent = current.year >= SHOCK_YEAR ? "Post-funding shock" : "Baseline";
+      badge.className = `badge ${current.year >= SHOCK_YEAR ? "shock" : ""}`;
+
+      renderNetwork(current);
+      drawLineChart("growthChart", visible, [
+        { key: "performers", color: "#2563eb" },
+        { key: "performances", color: "#f97316" }
+      ]);
+      drawLineChart("structureChart", visible, [
+        { key: "clustering", color: "#dc2626" },
+        { key: "mixerShare", color: "#16a34a" }
+      ], { yMin: 0, yMax: 100, decimals: 0 });
+    }
+
+    function setPlaying(value) {
+      state.playing = value;
+      if (state.timer) clearInterval(state.timer);
+      state.timer = null;
+      if (value) {
+        state.timer = setInterval(() => {
+          if (state.yearIndex >= YEARS.length - 1) {
+            setPlaying(false);
+            return;
+          }
+          state.yearIndex++;
+          updateUI();
+        }, 900);
+      }
+      updateUI();
+    }
+
+    document.getElementById("stageBack").addEventListener("click", () => { state.stage = Math.max(0, state.stage - 1); updateUI(); });
+    document.getElementById("stageNext").addEventListener("click", () => { state.stage = Math.min(stageText.length - 1, state.stage + 1); updateUI(); });
+    document.getElementById("shockSlider").addEventListener("input", e => { state.shockStrength = Number(e.target.value); regenerate(); updateUI(); });
+    document.getElementById("mixerSlider").addEventListener("input", e => { state.mixerRate = Number(e.target.value); regenerate(); updateUI(); });
+    document.getElementById("yearSlider").addEventListener("input", e => { state.yearIndex = Number(e.target.value); updateUI(); });
+    document.getElementById("playButton").addEventListener("click", () => setPlaying(!state.playing));
+    document.getElementById("stepButton").addEventListener("click", () => { state.yearIndex = Math.min(YEARS.length - 1, state.yearIndex + 1); updateUI(); });
+    document.getElementById("resetButton").addEventListener("click", () => { setPlaying(false); state.yearIndex = 0; state.stage = 0; updateUI(); });
+
+    regenerate();
+    updateUI();
+  </script>
+</body>
+</html>
